@@ -1,0 +1,22 @@
+# Xenstride notice (GPL-2.0-only, section 2a): this file was changed relative to ivall/xcl 9aec53d on 2026-11-23; see XENSTRIDE_CHANGES.md at the runtime root.
+[workspace]
+resolver = "2"
+members = ["crates/xcl", "tests/testtitle", "tests/testgamedll"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-only"
+
+# Keep full symbols in optimized alpha builds so release-only crashes can be
+# resolved to functions, files, and lines without a separate diagnostic build.
+[profile.release]
+debug = 2
+
+# Xenstride P9: optimised like release (upstream runs titles from `cargo build --release`), but
+# with debug assertions and overflow checks kept – they caught the P7 misaligned dereference.
+# `cargo build --profile lab` -> target\lab\xcl.exe
+[profile.lab]
+inherits = "release"
+debug-assertions = true
+overflow-checks = true

@@ -1,0 +1,61 @@
+{
+ "note": "Reviewed false positives of tools-mit/tools/release_check.py patterns. Each entry matches one exact file content (SHA-256) and line; any edit to the file invalidates it.",
+ "entries": [
+  {
+   "file": "runtime/crates/xcl/src/gpu/agility_tests.rs",
+   "line": 108,
+   "category": "personal_path",
+   "sha256": "16e366afb35ff686b75db193c7a974d6eb6df5ab9896e3cb296a52072d2417e4",
+   "reason": "placeholder path in a test, not a real user directory"
+  },
+  {
+   "file": "runtime/crates/xcl/src/gpu/agility_tests.rs",
+   "line": 115,
+   "category": "personal_path",
+   "sha256": "16e366afb35ff686b75db193c7a974d6eb6df5ab9896e3cb296a52072d2417e4",
+   "reason": "placeholder path in a test, not a real user directory"
+  },
+  {
+   "file": "runtime/crates/xcl/src/gpu/agility_tests.rs",
+   "line": 122,
+   "category": "personal_path",
+   "sha256": "16e366afb35ff686b75db193c7a974d6eb6df5ab9896e3cb296a52072d2417e4",
+   "reason": "placeholder path in a test, not a real user directory"
+  },
+  {
+   "file": "runtime/crates/xcl/src/hle/xgameruntime/api.rs",
+   "line": 1888,
+   "category": "personal_path",
+   "sha256": "2a0d987c94f7b74fdfa85648fbdda51cd389df14fde51404590447df67e5cb52",
+   "reason": "Xbox Live service URL (its users-me path), not a user directory"
+  },
+  {
+   "file": "runtime/crates/xcl/src/hle/xgameruntime/networking.rs",
+   "line": 791,
+   "category": "credential_url",
+   "sha256": "d42465e4a5d898f5c330082928c048ac26dd9dd07817eb897f0ddd0bc2f0c0ad",
+   "reason": "loopback URL with dummy credentials in a URL-parsing test"
+  },
+  {
+   "file": "runtime/crates/xcl/src/hle/xgameruntime/xsign.rs",
+   "line": 310,
+   "category": "personal_path",
+   "sha256": "6181d6bd0019fb0f454f38c34d34b3626fbbda5feecb717b3bfdca0491b981cc",
+   "reason": "Xbox Live service URL (its users-me path), not a user directory"
+  },
+  {
+   "file": "runtime/crates/xcl/src/hle/xgameruntime/xsign.rs",
+   "line": 318,
+   "category": "personal_path",
+   "sha256": "6181d6bd0019fb0f454f38c34d34b3626fbbda5feecb717b3bfdca0491b981cc",
+   "reason": "Xbox Live service URL (its users-me path), not a user directory"
+  },
+  {
+   "file": "runtime/tests/testtitle/src/main.rs",
+   "line": 688,
+   "category": "personal_path",
+   "sha256": "e525ea533b60b4b729bcc5f88100b8feabfa21f81d9476b5cf22f09f38a3b7b4",
+   "reason": "placeholder path in a test, not a real user directory"
+  }
+ ]
+}

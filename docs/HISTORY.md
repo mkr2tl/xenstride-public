@@ -10,7 +10,7 @@ These are local engineering phases, not fabricated public release dates.
 - P12: diagnostic attribution of long pipeline waits; much of the runtime remains upstream XCL.
 - P12.1: worker-priority correction and integration-test WARP guards.
 - P13 (`00bc53e`): state-sensitive prebuild keys, consistent bind status, activity counts and a synthetic pacing fixture.
-- P14: work in progress, not part of this preparation.
+- P14 (`fe6a013`): compute pipelines built ahead within the free commit (port of XCL #889), a
+  build-ahead starvation fix, pacing metrics. First public runtime source: `runtime/`, version 0.1.0.
 
-The package exports selected P12.1/P13 scheduling source, not every local phase or every
-upstream change. Results and exclusions are listed in STATUS.md.
+Results and limitations are listed in STATUS.md.

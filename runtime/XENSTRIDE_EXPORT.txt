@@ -1,0 +1,100 @@
+source commit fe6a01375f6a5542d77674f7e965960898acc32f
+lab name in comments: Cargo.toml
+lab name in comments: crates/xcl/src/eh.rs
+lab name in comments: crates/xcl/src/report.rs
+lab name in comments: crates/xcl/src/vfs_hooks.rs
+lab name in comments: crates/xcl/tests/console_dlls_e2e.rs
+lab name in comments: crates/xcl/tests/console_shaders.rs
+lab name in comments: crates/xcl/tests/disasm_e2e.rs
+lab name in comments: crates/xcl/tests/e2e.rs
+lab name in comments: crates/xcl/tests/gpu_compute_e2e.rs
+lab name in comments: crates/xcl/tests/gpu_pso_e2e.rs
+lab name in comments: crates/xcl/tests/heap_probe.rs
+lab name in comments: crates/xcl/tests/pls_quota.rs
+lab name in comments: crates/xcl/tests/predication_e2e.rs
+lab name in comments: crates/xcl/tests/rpf_e2e.rs
+lab name in comments: crates/xcl/tests/sparse_reinit.rs
+lab name in comments: crates/xcl/tests/texture_states.rs
+lab name in comments: crates/xcl/tests/xg_oracle.rs
+lab name in comments: crates/xcl/src/gpu/agility.rs
+lab name in comments: crates/xcl/src/gpu/tiling.rs
+lab name in comments: crates/xcl/src/gpu/uma.rs
+lab name in comments: crates/xcl/src/hle/acphal.rs
+lab name in comments: crates/xcl/src/hle/dstorage.rs
+lab name in comments: crates/xcl/src/hle/gameinput.rs
+lab name in comments: crates/xcl/src/hle/kernelx.rs
+lab name in comments: crates/xcl/src/hle/mod.rs
+lab name in comments: crates/xcl/src/hle/xg.rs
+lab name in comments: crates/xcl/src/gpu/recomp/runner.rs
+lab name in comments: crates/xcl/src/hle/d3d12x/bind.rs
+lab name in comments: crates/xcl/src/hle/d3d12x/null.rs
+lab name in comments: crates/xcl/src/hle/d3d12x/present.rs
+lab name in comments: crates/xcl/src/hle/d3d12x/pso_async.rs
+lab name in comments: crates/xcl/src/hle/d3d12x/real.rs
+lab name in comments: crates/xcl/src/hle/d3d12x/sparse.rs
+lab name in comments: crates/xcl/src/hle/d3d12x/title_textures.rs
+lab name in comments: crates/xcl/src/hle/d3d12x/vram.rs
+lab name in comments: crates/xcl/src/hle/xgameruntime/api.rs
+lab name in comments: crates/xcl/tests/warp_guard/mod.rs
+lab name in comments: tests/testtitle/src/gpu.rs
+lab name in comments: tests/testtitle/src/main.rs
+NUL -> \0 in byte strings: crates/xcl/src/hle/gameinput.rs
+NUL -> \0 in byte strings: tests/testtitle/src/main.rs
+binary fixture written by the harness: crates/xcl/tests/e2e.rs
+modification notice: Cargo.toml
+modification notice: crates/xcl/src/diagnostics.rs
+modification notice: crates/xcl/src/diagnostics_repeat.rs
+modification notice: crates/xcl/src/eh.rs
+modification notice: crates/xcl/src/gpu/agility.rs
+modification notice: crates/xcl/src/gpu/recomp/runner.rs
+modification notice: crates/xcl/src/gpu/tiling.rs
+modification notice: crates/xcl/src/gpu/uma.rs
+modification notice: crates/xcl/src/hle/acphal.rs
+modification notice: crates/xcl/src/hle/d3d12x/bind.rs
+modification notice: crates/xcl/src/hle/d3d12x/console_heap.rs
+modification notice: crates/xcl/src/hle/d3d12x/cpu_writes.rs
+modification notice: crates/xcl/src/hle/d3d12x/depth118_tests.rs
+modification notice: crates/xcl/src/hle/d3d12x/fence_x.rs
+modification notice: crates/xcl/src/hle/d3d12x/fixture_gpu.rs
+modification notice: crates/xcl/src/hle/d3d12x/list_x.rs
+modification notice: crates/xcl/src/hle/d3d12x/mod.rs
+modification notice: crates/xcl/src/hle/d3d12x/null.rs
+modification notice: crates/xcl/src/hle/d3d12x/present.rs
+modification notice: crates/xcl/src/hle/d3d12x/pso_async.rs
+modification notice: crates/xcl/src/hle/d3d12x/pso_diagnostics.rs
+modification notice: crates/xcl/src/hle/d3d12x/real.rs
+modification notice: crates/xcl/src/hle/d3d12x/sparse.rs
+modification notice: crates/xcl/src/hle/d3d12x/title_textures.rs
+modification notice: crates/xcl/src/hle/d3d12x/vram.rs
+modification notice: crates/xcl/src/hle/dstorage.rs
+modification notice: crates/xcl/src/hle/dstorage_p0_tests.rs
+modification notice: crates/xcl/src/hle/gameinput.rs
+modification notice: crates/xcl/src/hle/kernelx.rs
+modification notice: crates/xcl/src/hle/mod.rs
+modification notice: crates/xcl/src/hle/opus.rs
+modification notice: crates/xcl/src/hle/xg.rs
+modification notice: crates/xcl/src/hle/xgameruntime/api.rs
+modification notice: crates/xcl/src/hle/xgameruntime/mod.rs
+modification notice: crates/xcl/src/host.rs
+modification notice: crates/xcl/src/lib.rs
+modification notice: crates/xcl/src/loader.rs
+modification notice: crates/xcl/src/report.rs
+modification notice: crates/xcl/src/resolver.rs
+modification notice: crates/xcl/src/state.rs
+modification notice: crates/xcl/src/vfs_hooks.rs
+modification notice: crates/xcl/tests/console_dlls_e2e.rs
+modification notice: crates/xcl/tests/console_shaders.rs
+modification notice: crates/xcl/tests/disasm_e2e.rs
+modification notice: crates/xcl/tests/e2e.rs
+modification notice: crates/xcl/tests/gpu_compute_e2e.rs
+modification notice: crates/xcl/tests/gpu_pso_e2e.rs
+modification notice: crates/xcl/tests/heap_probe.rs
+modification notice: crates/xcl/tests/pls_quota.rs
+modification notice: crates/xcl/tests/predication_e2e.rs
+modification notice: crates/xcl/tests/rpf_e2e.rs
+modification notice: crates/xcl/tests/sparse_reinit.rs
+modification notice: crates/xcl/tests/texture_states.rs
+modification notice: crates/xcl/tests/warp_guard/mod.rs
+modification notice: crates/xcl/tests/xg_oracle.rs
+modification notice: tests/testtitle/src/gpu.rs
+modification notice: tests/testtitle/src/main.rs
