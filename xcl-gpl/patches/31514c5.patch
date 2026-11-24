@@ -1,0 +1,231 @@
+diff --git a/crates/xcl/src/hle/d3d12x/pso_async.rs b/crates/xcl/src/hle/d3d12x/pso_async.rs
+index 9e82bc1..d8e79ef 100644
+--- a/crates/xcl/src/hle/d3d12x/pso_async.rs
++++ b/crates/xcl/src/hle/d3d12x/pso_async.rs
+@@ -33,6 +33,8 @@ struct Pending {
+     used: std::sync::atomic::AtomicBool,
+     /// the stand-in was released before the real pipeline was built
+     orphan: std::sync::atomic::AtomicBool,
++    /// GTA6-Lab P12.1: the thread id of the build-ahead thread building it now (0: none)
++    builder: std::sync::atomic::AtomicU32,
+ }
+ 
+ impl Pending {
+@@ -129,6 +131,9 @@ pub struct Timings {
+     /// times no frame was presented for `stall_watch::QUIET` while title threads waited here
+     #[serde(default)]
+     pub stalls_with_pipeline_waits: usize,
++    /// P12.1: build-ahead threads raised for a bind that waited for their build
++    #[serde(default)]
++    pub build_ahead_raised_for_a_bind: usize,
+ }
+ 
+ pub fn timings() -> Timings {
+@@ -153,6 +158,7 @@ pub fn timings() -> Timings {
+         longest_bind_wait_us: LONGEST_WAIT_US.load(Ordering::Relaxed),
+         bind_waits_over_1s: LONG_WAITS.load(Ordering::Relaxed),
+         stalls_with_pipeline_waits: stall_watch::STALLS.load(Ordering::Relaxed),
++        build_ahead_raised_for_a_bind: RAISED.load(Ordering::Relaxed),
+     }
+ }
+ 
+@@ -257,6 +263,7 @@ fn submit_as(standin: usize, compute: bool, job: Job, to_workers: bool, key: u64
+         key,
+         used: Default::default(),
+         orphan: Default::default(),
++        builder: Default::default(),
+     });
+     PENDING.lock().unwrap().get_or_insert_with(HashMap::new).insert(standin, p.clone());
+     static ONCE: std::sync::Once = std::sync::Once::new();
+@@ -394,7 +401,18 @@ fn preload() -> Option<&'static Preload> {
+                     // (None: a bind took it and builds it itself)
+                     let job = p.job.lock().unwrap().take();
+                     if let Some(job) = job {
++                        // (a bind may have raised this thread for the last build: lowest again)
++                        unsafe {
++                            use windows_sys::Win32::System::Threading::{GetCurrentThread, GetCurrentThreadId, SetThreadPriority, THREAD_PRIORITY_LOWEST};
++                            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
++                            p.builder.store(GetCurrentThreadId(), Ordering::Release);
++                        }
+                         let real = job();
++                        p.builder.store(0, Ordering::Release);
++                        unsafe {
++                            use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_LOWEST};
++                            SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
++                        }
+                         complete(&p, real);
+                         let n = DONE.fetch_add(1, Ordering::Relaxed) + 1;
+                         if n.is_power_of_two() {
+@@ -474,6 +492,8 @@ pub fn resolve_wait(pso: usize) -> usize {
+     let _wait = stall_watch::Wait::begin(p.compute, job.is_some());
+     if let Some(job) = job {
+         run(&p, job);
++    } else {
++        raise_builder(&p);
+     }
+     let mut done = p.done.lock().unwrap();
+     while !*done {
+@@ -492,6 +512,34 @@ pub fn resolve_wait(pso: usize) -> usize {
+     }
+ }
+ 
++/// GTA6-Lab P12.1: a bind waits for a pipeline a build-ahead thread is building. That thread
++/// runs at THREAD_PRIORITY_LOWEST; with every core busy (a loading title) it got almost no CPU
++/// and the bind waited ~40 s for ~0.3 s of work (`p12_1_bench_…`). It is raised to the waiting
++/// thread's priority (normal at least) until that build ends; the build itself, its result and
++/// the bind are unchanged.
++fn raise_builder(p: &Pending) {
++    use windows_sys::Win32::Foundation::CloseHandle;
++    use windows_sys::Win32::System::Threading::{GetCurrentThread, GetThreadPriority, OpenThread, SetThreadPriority, THREAD_PRIORITY_NORMAL, THREAD_SET_LIMITED_INFORMATION};
++    let tid = p.builder.load(Ordering::Acquire);
++    if tid == 0 {
++        return;
++    }
++    unsafe {
++        let h = OpenThread(THREAD_SET_LIMITED_INFORMATION, 0, tid);
++        if h.is_null() {
++            return;
++        }
++        // (still that build: a later one of the same thread is lowered again by its loop)
++        if p.builder.load(Ordering::Acquire) == tid {
++            let mine = GetThreadPriority(GetCurrentThread());
++            SetThreadPriority(h, mine.max(THREAD_PRIORITY_NORMAL));
++            RAISED.fetch_add(1, Ordering::Relaxed);
++        }
++        CloseHandle(h);
++    }
++}
++static RAISED: AtomicUsize = AtomicUsize::new(0);
++
+ /// For binding: compute pipelines are waited for, graphics ones are not.
+ pub fn resolve_for_bind(pso: usize) -> usize {
+     match entry(pso) {
+@@ -690,9 +738,128 @@ mod p3_tests {
+             orphan: Default::default(),
+             key: 0,
+             used: Default::default(),
++            builder: Default::default(),
+         })
+     }
+ 
++    /// Work that takes about `ms` of CPU time on an idle core (a stand-in for a driver compile):
++    /// a fixed number of iterations, measured once, so a thread that gets less CPU takes longer.
++    fn calibrated_work(ms: u64) -> impl Fn() + Send + Sync + Clone + 'static {
++        fn spin(n: u64) -> u64 {
++            let mut x = 0x9E37_79B9_7F4A_7C15u64;
++            for i in 0..n {
++                x = std::hint::black_box(x.rotate_left(7) ^ i).wrapping_mul(0x100_0000_01B3);
++            }
++            x
++        }
++        let probe = 2_000_000u64;
++        let t = std::time::Instant::now();
++        std::hint::black_box(spin(probe));
++        let per_ms = (probe as f64 / t.elapsed().as_secs_f64().max(1e-6) / 1000.0) as u64;
++        let n = per_ms.max(1) * ms;
++        move || {
++            std::hint::black_box(spin(n));
++        }
++    }
++
++    /// P12.1 bench (`--ignored`, run on demand): a pipeline an earlier run used is being built
++    /// by a build-ahead thread (THREAD_PRIORITY_LOWEST) when the title binds it, while every
++    /// core is busy with normal-priority work (a loading title). Prints how long the bind waits
++    /// for ~300 ms of build work.
++    #[test]
++    #[ignore]
++    fn p12_1_bench_bind_waiting_on_a_build_ahead_thread_under_load() {
++        let work = calibrated_work(300);
++        let idle = std::time::Instant::now();
++        work();
++        let idle = idle.elapsed();
++        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
++        let cores = std::thread::available_parallelism().map_or(8, |n| n.get());
++        let busy: Vec<_> = (0..cores * 2)
++            .map(|_| {
++                let stop = stop.clone();
++                std::thread::spawn(move || {
++                    let mut x = 1u64;
++                    while !stop.load(Ordering::Relaxed) {
++                        x = std::hint::black_box(x.wrapping_mul(3) ^ 5);
++                    }
++                })
++            })
++            .collect();
++        let mut waits = Vec::new();
++        for round in 0..3u64 {
++            let standin = Box::into_raw(Box::new(0u8)) as usize;
++            let key = 0x0B1D_0000 + round;
++            used::earlier_run_used(key);
++            let started = Arc::new(std::sync::atomic::AtomicBool::new(false));
++            let (s, w) = (started.clone(), work.clone());
++            submit_lazy(standin, true, Box::new(move || {
++                s.store(true, Ordering::Release);
++                w();
++                0x7700 + round as usize
++            }), key);
++            let t = std::time::Instant::now();
++            while !started.load(Ordering::Acquire) && t.elapsed() < std::time::Duration::from_secs(30) {
++                std::thread::sleep(std::time::Duration::from_millis(1));
++            }
++            assert!(started.load(Ordering::Acquire), "a build-ahead thread took the job");
++            let t = std::time::Instant::now();
++            assert_eq!(resolve_for_bind(standin), 0x7700 + round as usize);
++            waits.push(t.elapsed());
++            released(standin);
++            drop(unsafe { Box::from_raw(standin as *mut u8) });
++        }
++        stop.store(true, Ordering::Relaxed);
++        for b in busy {
++            b.join().unwrap();
++        }
++        println!("P12.1 BENCH: build work {:.0} ms idle; bind waits under load (cores {cores}, {} busy threads): {:?}", idle.as_secs_f64() * 1000.0, cores * 2, waits.iter().map(|d| format!("{:.0} ms", d.as_secs_f64() * 1000.0)).collect::<Vec<_>>());
++    }
++
++    /// P12.1: while a bind waits for a pipeline a build-ahead thread builds, that thread runs at
++    /// the waiter's priority (normal at least); it is the lowest again for its next build.
++    #[test]
++    fn p12_1_a_build_ahead_thread_a_bind_waits_for_runs_at_normal_priority() {
++        use windows_sys::Win32::System::Threading::{GetCurrentThread, GetThreadPriority, THREAD_PRIORITY_LOWEST, THREAD_PRIORITY_NORMAL};
++        let standin = Box::into_raw(Box::new(0u8)) as usize;
++        let key = 0x0B1D_1000;
++        used::earlier_run_used(key);
++        let (started_tx, started_rx) = mpsc::channel::<i32>();
++        let (go_tx, go_rx) = mpsc::channel::<()>();
++        let (prio_tx, prio_rx) = mpsc::channel::<i32>();
++        submit_lazy(standin, true, Box::new(move || {
++            started_tx.send(unsafe { GetThreadPriority(GetCurrentThread()) }).unwrap();
++            go_rx.recv().unwrap();
++            prio_tx.send(unsafe { GetThreadPriority(GetCurrentThread()) }).unwrap();
++            0x7a7a
++        }), key);
++        let before = started_rx.recv_timeout(std::time::Duration::from_secs(30)).expect("a build-ahead thread took the job");
++        assert_eq!(before, THREAD_PRIORITY_LOWEST, "built ahead at the lowest priority");
++        let raised_before = RAISED.load(Ordering::Relaxed);
++        let binder = std::thread::spawn(move || resolve_for_bind(standin));
++        let t = std::time::Instant::now();
++        while RAISED.load(Ordering::Relaxed) == raised_before && t.elapsed() < std::time::Duration::from_secs(10) {
++            std::thread::sleep(std::time::Duration::from_millis(2));
++        }
++        go_tx.send(()).unwrap();
++        assert_eq!(prio_rx.recv().unwrap(), THREAD_PRIORITY_NORMAL, "raised while the bind waits");
++        assert_eq!(binder.join().unwrap(), 0x7a7a, "the bind gets the real pipeline");
++        released(standin);
++        drop(unsafe { Box::from_raw(standin as *mut u8) });
++        // the next build ahead starts at the lowest priority again
++        let next = Box::into_raw(Box::new(0u8)) as usize;
++        used::earlier_run_used(key + 1);
++        let (tx, rx) = mpsc::channel::<i32>();
++        submit_lazy(next, true, Box::new(move || {
++            tx.send(unsafe { GetThreadPriority(GetCurrentThread()) }).unwrap();
++            0x7a7b
++        }), key + 1);
++        assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(30)).unwrap(), THREAD_PRIORITY_LOWEST);
++        assert_eq!(resolve_wait(next), 0x7a7b);
++        released(next);
++        drop(unsafe { Box::from_raw(next as *mut u8) });
++    }
++
+     /// P12: a compute bind that waits for a slow build is listed while it waits and counted after.
+     #[test]
+     fn p12_a_slow_compute_bind_is_listed_while_it_waits_and_counted() {

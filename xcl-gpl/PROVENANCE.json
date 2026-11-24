@@ -1,0 +1,25 @@
+{
+  "before": {
+    "commit": "12ae36a49f587c62f101bfd6ce167f7fb739de08",
+    "blob_sha": "9e82bc16ca2817bc1edb15da8433e3185555eab4",
+    "source_body_sha256": "0816a27362bf3c2d4e3dfb8950398d09e411167151d7da043a5cada674e1089d"
+  },
+  "after": {
+    "commit": "fffd4e9c67e85693732df52a55894005677e4ee9",
+    "blob_sha": "e7990fd66c93aafca18006ebb9c6e1db75dc414f",
+    "source_body_sha256": "86c57ab5f3d67d1ed41eb8a47e5e6988b20bc88525d8baf020e493a106d6af09"
+  },
+  "upstream": {
+    "repository": "https://github.com/ivall/xcl",
+    "commit": "9aec53df7004bd9018ef3df67532f85d66ee261c",
+    "blob_sha": "b303cf55e43b42c001e2c72b82cac363380be269",
+    "github_blob_verified": true
+  },
+  "features": [
+    "31514c52cea1eab5c7744320fcf40cf09fb43042",
+    "fffd4e9c67e85693732df52a55894005677e4ee9"
+  ],
+  "base_reconstruction": "local-base-reconstruction.patch",
+  "distribution_notice_date": "2026-11-24",
+  "licence": "GPL-2.0-only"
+}

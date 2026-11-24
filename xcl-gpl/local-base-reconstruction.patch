@@ -1,0 +1,463 @@
+diff --git a/crates/xcl/src/hle/d3d12x/pso_async.rs b/crates/xcl/src/hle/d3d12x/pso_async.rs
+index b303cf5..9e82bc1 100644
+--- a/crates/xcl/src/hle/d3d12x/pso_async.rs
++++ b/crates/xcl/src/hle/d3d12x/pso_async.rs
+@@ -6,6 +6,10 @@
+ //! as it is there. A graphics pipeline draws nothing until then; a compute pipeline is waited
+ //! for at its first bind (a skipped dispatch would corrupt what it computes).
+ //! `XCL_ASYNC_PSO=0` builds every pipeline in the call, as before.
++//!
++//! GTA6-Lab (on upstream af20b4b's lazy creation): a send the workers cannot take is built
++//! inline instead of leaving a stand-in for good (c7fe076), and the counters tell apart what was
++//! submitted, deferred by `lazy` and never asked for, sent, started, built, failed and waited.
+ 
+ use std::collections::HashMap;
+ use std::sync::atomic::{AtomicUsize, Ordering};
+@@ -16,6 +20,8 @@ struct Pending {
+     job: Mutex<Option<Job>>,
+     /// the build went to the workers (a lazy one goes on its first `resolve`)
+     sent: std::sync::atomic::AtomicBool,
++    /// when it went to the workers (queue time is measured from there)
++    queued_at: Mutex<std::time::Instant>,
+     /// the real pipeline state (raw pointer), 0 while building or when building failed
+     real: AtomicUsize,
+     done: Mutex<bool>,
+@@ -64,6 +70,100 @@ fn complete(p: &Pending, real: usize) {
+ }
+ static BUILT: AtomicUsize = AtomicUsize::new(0);
+ static FAILED: AtomicUsize = AtomicUsize::new(0);
++static SUBMITTED: AtomicUsize = AtomicUsize::new(0);
++static SENT: AtomicUsize = AtomicUsize::new(0);
++static RUNNING: AtomicUsize = AtomicUsize::new(0);
++static STARTED: AtomicUsize = AtomicUsize::new(0);
++static REJECTED: AtomicUsize = AtomicUsize::new(0);
++static QUEUE_US: AtomicUsize = AtomicUsize::new(0);
++static BUILD_US: AtomicUsize = AtomicUsize::new(0);
++static WAIT_US: AtomicUsize = AtomicUsize::new(0);
++static STANDIN_BINDS: AtomicUsize = AtomicUsize::new(0);
++static FAILED_BINDS: AtomicUsize = AtomicUsize::new(0);
++static LONGEST_WAIT_US: AtomicUsize = AtomicUsize::new(0);
++static LONG_WAITS: AtomicUsize = AtomicUsize::new(0);
++
++fn micros(d: std::time::Duration) -> usize {
++    d.as_micros().min(usize::MAX as u128) as usize
++}
++
++fn run(p: &Pending, job: Job) {
++    QUEUE_US.fetch_add(micros(p.queued_at.lock().unwrap().elapsed()), Ordering::Relaxed);
++    STARTED.fetch_add(1, Ordering::Relaxed);
++    RUNNING.fetch_add(1, Ordering::Relaxed);
++    let started = std::time::Instant::now();
++    let real = job();
++    BUILD_US.fetch_add(micros(started.elapsed()), Ordering::Relaxed);
++    RUNNING.fetch_sub(1, Ordering::Relaxed);
++    complete(p, real);
++}
++
++#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
++pub struct Timings {
++    pub submitted: usize,
++    /// lazy (`XCL_LAZY_PSO`) pipelines never asked for: not built, not queued
++    #[serde(default)]
++    pub deferred_never_requested: usize,
++    /// handed to the workers (at once, or on a lazy one's first use)
++    #[serde(default)]
++    pub sent: usize,
++    pub started: usize,
++    pub built: usize,
++    pub failed: usize,
++    pub running: usize,
++    /// sent or taken by a bind, not finished (orphans included)
++    pub unfinished_including_orphans: usize,
++    pub scheduler_rejections: usize,
++    /// Cumulative time over jobs/threads; not elapsed process time.
++    pub queue_us: usize,
++    pub build_work_us: usize,
++    /// Includes inline builds taken over at compute bind.
++    pub bind_wait_us: usize,
++    pub graphics_standin_binds: usize,
++    pub failed_graphics_standin_binds: usize,
++    /// GTA6-Lab P12: the longest single bind wait (µs) and the waits of a second or more
++    #[serde(default)]
++    pub longest_bind_wait_us: usize,
++    #[serde(default)]
++    pub bind_waits_over_1s: usize,
++    /// times no frame was presented for `stall_watch::QUIET` while title threads waited here
++    #[serde(default)]
++    pub stalls_with_pipeline_waits: usize,
++}
++
++pub fn timings() -> Timings {
++    let (built, failed, _) = counts();
++    let submitted = SUBMITTED.load(Ordering::Relaxed);
++    let deferred = deferred_never_requested();
++    Timings {
++        submitted,
++        deferred_never_requested: deferred,
++        sent: SENT.load(Ordering::Relaxed),
++        started: STARTED.load(Ordering::Relaxed),
++        built,
++        failed,
++        running: RUNNING.load(Ordering::Relaxed),
++        unfinished_including_orphans: submitted.saturating_sub(built + failed + deferred),
++        scheduler_rejections: REJECTED.load(Ordering::Relaxed),
++        queue_us: QUEUE_US.load(Ordering::Relaxed),
++        build_work_us: BUILD_US.load(Ordering::Relaxed),
++        bind_wait_us: WAIT_US.load(Ordering::Relaxed),
++        graphics_standin_binds: STANDIN_BINDS.load(Ordering::Relaxed),
++        failed_graphics_standin_binds: FAILED_BINDS.load(Ordering::Relaxed),
++        longest_bind_wait_us: LONGEST_WAIT_US.load(Ordering::Relaxed),
++        bind_waits_over_1s: LONG_WAITS.load(Ordering::Relaxed),
++        stalls_with_pipeline_waits: stall_watch::STALLS.load(Ordering::Relaxed),
++    }
++}
++
++/// Lazy stand-ins whose build was neither sent nor taken by a bind.
++fn deferred_never_requested() -> usize {
++    PENDING.lock().unwrap().as_ref().map_or(0, |m| {
++        m.values()
++            .filter(|p| !p.sent.load(Ordering::Acquire) && !*p.done.lock().unwrap() && p.job.lock().unwrap().is_some())
++            .count()
++    })
++}
+ 
+ pub fn enabled() -> bool {
+     std::env::var("XCL_ASYNC_PSO").map_or(true, |v| v != "0")
+@@ -87,7 +187,7 @@ fn queue() -> &'static Mutex<mpsc::Sender<Arc<Pending>>> {
+                 // (None: a bind took it and builds it itself)
+                 let job = p.job.lock().unwrap().take();
+                 if let Some(job) = job {
+-                    complete(&p, job());
++                    run(&p, job);
+                 }
+             });
+         }
+@@ -95,6 +195,27 @@ fn queue() -> &'static Mutex<mpsc::Sender<Arc<Pending>>> {
+     })
+ }
+ 
++/// To the workers; a send they cannot take is built here (never a stand-in for good).
++fn send(p: Arc<Pending>) {
++    *p.queued_at.lock().unwrap() = std::time::Instant::now();
++    SENT.fetch_add(1, Ordering::Relaxed);
++    // Never keep the sender mutex held while a rejected job builds inline.
++    let tx = queue().lock().unwrap().clone();
++    enqueue(&tx, p);
++}
++
++fn enqueue(tx: &mpsc::Sender<Arc<Pending>>, p: Arc<Pending>) {
++    if let Err(error) = tx.send(p) {
++        REJECTED.fetch_add(1, Ordering::Relaxed);
++        crate::xlog_warn!("D3D12.X: background PSO queue disconnected; building the rejected job inline");
++        let p = error.0;
++        let job = p.job.lock().unwrap().take();
++        if let Some(job) = job {
++            run(&p, job);
++        }
++    }
++}
++
+ /// Release a pipeline state XCL owns (raw pointer, 0 = none).
+ pub fn release(p: usize) {
+     if p != 0 {
+@@ -123,10 +244,12 @@ pub fn submit_lazy(standin: usize, compute: bool, job: Job, key: u64) {
+     submit_as(standin, compute, job, false, key);
+ }
+ 
+-fn submit_as(standin: usize, compute: bool, job: Job, send: bool, key: u64) {
++fn submit_as(standin: usize, compute: bool, job: Job, to_workers: bool, key: u64) {
++    SUBMITTED.fetch_add(1, Ordering::Relaxed);
+     let p = Arc::new(Pending {
+         job: Mutex::new(Some(job)),
+-        sent: std::sync::atomic::AtomicBool::new(send),
++        sent: std::sync::atomic::AtomicBool::new(to_workers),
++        queued_at: Mutex::new(std::time::Instant::now()),
+         real: AtomicUsize::new(0),
+         done: Mutex::new(false),
+         cv: Condvar::new(),
+@@ -139,9 +262,10 @@ fn submit_as(standin: usize, compute: bool, job: Job, send: bool, key: u64) {
+     static ONCE: std::sync::Once = std::sync::Once::new();
+     ONCE.call_once(|| {
+         crate::xlog_info!("D3D12.X: pipelines whose shaders are not compiled yet get a stand-in and are built in the background");
++        stall_watch::start();
+     });
+-    if send {
+-        let _ = queue().lock().unwrap().send(p);
++    if to_workers {
++        send(p);
+     } else if used::known(key) {
+         if let Some(q) = preload() {
+             q.list.lock().unwrap().push_back(p);
+@@ -331,7 +455,7 @@ pub fn resolve(pso: usize) -> usize {
+         0 => {
+             // a lazy one is wanted now: to the workers
+             if !p.sent.swap(true, Ordering::AcqRel) {
+-                let _ = queue().lock().unwrap().send(p);
++                send(p);
+             }
+             pso
+         }
+@@ -344,14 +468,24 @@ pub fn resolve(pso: usize) -> usize {
+ pub fn resolve_wait(pso: usize) -> usize {
+     let Some(p) = entry(pso) else { return pso };
+     p.note_use();
++    let started = std::time::Instant::now();
++    p.sent.store(true, Ordering::Release);
+     let job = p.job.lock().unwrap().take();
++    let _wait = stall_watch::Wait::begin(p.compute, job.is_some());
+     if let Some(job) = job {
+-        complete(&p, job());
++        run(&p, job);
+     }
+     let mut done = p.done.lock().unwrap();
+     while !*done {
+         done = p.cv.wait(done).unwrap();
+     }
++    drop(done);
++    let waited = micros(started.elapsed());
++    WAIT_US.fetch_add(waited, Ordering::Relaxed);
++    LONGEST_WAIT_US.fetch_max(waited, Ordering::Relaxed);
++    if waited >= 1_000_000 {
++        LONG_WAITS.fetch_add(1, Ordering::Relaxed);
++    }
+     match p.real.load(Ordering::Acquire) {
+         0 => pso,
+         r => r,
+@@ -362,11 +496,158 @@ pub fn resolve_wait(pso: usize) -> usize {
+ pub fn resolve_for_bind(pso: usize) -> usize {
+     match entry(pso) {
+         Some(p) if p.compute => resolve_wait(pso),
+-        Some(_) => resolve(pso),
++        Some(p) => {
++            let result = resolve(pso);
++            if result == pso {
++                STANDIN_BINDS.fetch_add(1, Ordering::Relaxed);
++                if *p.done.lock().unwrap() {
++                    FAILED_BINDS.fetch_add(1, Ordering::Relaxed);
++                }
++            }
++            result
++        }
+         None => pso,
+     }
+ }
+ 
++/// GTA6-Lab P12: which title threads wait for a pipeline when the frames stop.
++///
++/// A retail title ends itself (a deliberate null store) when it has not finished a frame for
++/// about 30 s. In the P11 run of 2026-11-24 the presents stopped at 149 s while title threads
++/// were in `resolve_wait` – one of them building a 300 KB compute program in the driver for
++/// 17.5 s – and the title ended itself at 179 s; the log said nothing in between. This watch
++/// only reports: when no frame was presented for `QUIET` and title threads wait here, it logs
++/// them (again after `QUIET` × 3 and × 5), and counts the episode. It changes no wait.
++pub(crate) mod stall_watch {
++    use std::collections::HashMap;
++    use std::sync::atomic::{AtomicUsize, Ordering};
++    use std::sync::Mutex;
++    use std::time::{Duration, Instant};
++
++    pub const QUIET: Duration = Duration::from_secs(5);
++    pub static STALLS: AtomicUsize = AtomicUsize::new(0);
++
++    #[derive(Clone, Copy, Debug)]
++    pub struct Waiting {
++        pub since: Instant,
++        pub compute: bool,
++        /// the waiting thread builds the pipeline itself (no worker had taken it)
++        pub builds_here: bool,
++    }
++
++    static WAITS: Mutex<Option<HashMap<u32, Waiting>>> = Mutex::new(None);
++
++    fn thread_id() -> u32 {
++        unsafe { windows_sys::Win32::System::Threading::GetCurrentThreadId() }
++    }
++
++    /// A wait of this thread, from `begin` until dropped.
++    pub struct Wait(u32);
++
++    impl Wait {
++        pub fn begin(compute: bool, builds_here: bool) -> Wait {
++            let id = thread_id();
++            WAITS.lock().unwrap().get_or_insert_with(HashMap::new).insert(id, Waiting { since: Instant::now(), compute, builds_here });
++            Wait(id)
++        }
++    }
++
++    impl Drop for Wait {
++        fn drop(&mut self) {
++            if let Some(m) = WAITS.lock().unwrap().as_mut() {
++                m.remove(&self.0);
++            }
++        }
++    }
++
++    /// (thread, how long, compute, builds here), the longest first
++    pub fn waiting(now: Instant) -> Vec<(u32, Duration, bool, bool)> {
++        let mut v: Vec<_> = WAITS
++            .lock()
++            .unwrap()
++            .as_ref()
++            .map(|m| m.iter().map(|(&t, w)| (t, now.saturating_duration_since(w.since), w.compute, w.builds_here)).collect())
++            .unwrap_or_default();
++        v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
++        v
++    }
++
++    /// The line for a stall of `quiet` with these waits; None when nothing waits here (the stall
++    /// is elsewhere) or when it is not one of the points to report (`QUIET` × 1, 3, 5).
++    pub fn report(quiet: Duration, reported: u32, waits: &[(u32, Duration, bool, bool)]) -> Option<String> {
++        let next = [1u32, 3, 5].get(reported as usize)?;
++        if quiet < QUIET * *next || waits.is_empty() {
++            return None;
++        }
++        let list: Vec<String> = waits
++            .iter()
++            .take(8)
++            .map(|(t, d, c, b)| format!("thread {t}: {} pipeline, {:.1} s{}", if *c { "compute" } else { "graphics" }, d.as_secs_f64(), if *b { ", building it itself" } else { "" }))
++            .collect();
++        Some(format!(
++            "D3D12.X: no frame presented for {:.0} s; {} title thread(s) wait for a pipeline: {}{}",
++            quiet.as_secs_f64(),
++            waits.len(),
++            list.join("; "),
++            if waits.len() > 8 { "; …" } else { "" }
++        ))
++    }
++
++    pub fn start() {
++        if cfg!(test) {
++            return;
++        }
++        let _ = std::thread::Builder::new().name("xcl-stall-watch".into()).spawn(|| {
++            let (mut last_n, mut last_at, mut reported) = (super::super::present::presents(), Instant::now(), 0u32);
++            loop {
++                std::thread::sleep(Duration::from_secs(1));
++                let now = Instant::now();
++                let n = super::super::present::presents();
++                // (no frame yet: the title is still starting, its waits are expected)
++                if n != last_n || n == 0 {
++                    (last_n, last_at, reported) = (n, now, 0);
++                    continue;
++                }
++                if let Some(line) = report(now - last_at, reported, &waiting(now)) {
++                    if reported == 0 {
++                        STALLS.fetch_add(1, Ordering::Relaxed);
++                    }
++                    reported += 1;
++                    crate::xlog_warn!("{line}");
++                }
++            }
++        });
++    }
++
++    #[cfg(test)]
++    mod tests {
++        use super::*;
++
++        #[test]
++        fn p12_a_stall_is_reported_at_5_15_and_25_s_only_while_threads_wait() {
++            let w = [(7, Duration::from_millis(17_500), true, true), (9, Duration::from_secs(3), true, false)];
++            assert_eq!(report(Duration::from_secs(4), 0, &w), None, "under QUIET");
++            let line = report(Duration::from_secs(5), 0, &w).unwrap();
++            assert!(line.contains("no frame presented for 5 s; 2 title thread(s)"), "{line}");
++            assert!(line.contains("thread 7: compute pipeline, 17.5 s, building it itself; thread 9: compute pipeline, 3.0 s"), "{line}");
++            assert_eq!(report(Duration::from_secs(9), 1, &w), None, "the second report comes at 15 s");
++            assert!(report(Duration::from_secs(15), 1, &w).is_some());
++            assert!(report(Duration::from_secs(25), 2, &w).is_some());
++            assert_eq!(report(Duration::from_secs(60), 3, &w), None, "three reports per stall");
++            assert_eq!(report(Duration::from_secs(30), 0, &[]), None, "nothing waits for a pipeline: not this watch's stall");
++        }
++
++        #[test]
++        fn p12_a_wait_is_listed_while_it_lasts() {
++            let w = Wait::begin(true, false);
++            let now = waiting(Instant::now());
++            assert!(now.iter().any(|&(t, _, c, b)| t == thread_id() && c && !b));
++            drop(w);
++            assert!(waiting(Instant::now()).iter().all(|&(t, ..)| t != thread_id()));
++        }
++    }
++}
++
+ /// The title released stand-in `pso` for good: forget it (its address may come back for
+ /// another object) and return its real pipeline to release (0: none, or still being built –
+ /// the worker's result is then released when it arrives).
+@@ -392,3 +673,77 @@ pub fn counts() -> (usize, usize, usize) {
+     let pending = PENDING.lock().unwrap().as_ref().map_or(0, |m| m.values().filter(|p| !*p.done.lock().unwrap()).count());
+     (BUILT.load(Ordering::Relaxed), FAILED.load(Ordering::Relaxed), pending)
+ }
++
++#[cfg(test)]
++mod p3_tests {
++    use super::*;
++
++    fn pending(job: Job, sent: bool) -> Arc<Pending> {
++        Arc::new(Pending {
++            job: Mutex::new(Some(job)),
++            sent: std::sync::atomic::AtomicBool::new(sent),
++            queued_at: Mutex::new(std::time::Instant::now()),
++            real: AtomicUsize::new(0),
++            done: Mutex::new(false),
++            cv: Condvar::new(),
++            compute: false,
++            orphan: Default::default(),
++            key: 0,
++            used: Default::default(),
++        })
++    }
++
++    /// P12: a compute bind that waits for a slow build is listed while it waits and counted after.
++    #[test]
++    fn p12_a_slow_compute_bind_is_listed_while_it_waits_and_counted() {
++        let key = Box::into_raw(Box::new(0u8)) as usize;
++        let before = timings();
++        submit(key, true, Box::new(|| {
++            std::thread::sleep(std::time::Duration::from_millis(1100));
++            0x5151
++        }));
++        let waiter = std::thread::spawn(move || resolve_for_bind(key));
++        let start = std::time::Instant::now();
++        let mut seen = false;
++        while !seen && start.elapsed() < std::time::Duration::from_secs(5) {
++            seen = stall_watch::waiting(std::time::Instant::now()).iter().any(|w| w.2);
++            std::thread::sleep(std::time::Duration::from_millis(10));
++        }
++        assert!(seen, "the waiting bind is listed");
++        assert_eq!(waiter.join().unwrap(), 0x5151);
++        let t = timings();
++        assert!(t.bind_waits_over_1s > before.bind_waits_over_1s);
++        assert!(t.longest_bind_wait_us >= 1_000_000);
++        assert_eq!(released(key), 0x5151);
++        drop(unsafe { Box::from_raw(key as *mut u8) });
++    }
++
++    #[test]
++    fn p3_disconnected_scheduler_does_not_leave_a_pipeline_pending_forever() {
++        let (tx, rx) = mpsc::channel();
++        drop(rx);
++        let p = pending(Box::new(|| 0), true);
++        enqueue(&tx, p.clone());
++        assert!(*p.done.lock().unwrap(), "rejected background submission must finish explicitly, not remain a permanent stand-in");
++        assert!(p.job.lock().unwrap().is_none());
++    }
++
++    /// Upstream's lazy pipelines: one never asked for is neither built nor counted as queued;
++    /// a compute bind builds it in the call.
++    #[test]
++    fn p6_lazy_pipelines_are_counted_apart_until_their_first_use() {
++        let key = Box::into_raw(Box::new(0u8)) as usize; // a unique stand-in address
++        let before = timings();
++        submit_lazy(key, true, Box::new(|| 0), 0);
++        let t = timings();
++        assert_eq!(t.submitted, before.submitted + 1);
++        assert!(t.deferred_never_requested >= 1);
++        assert!(is_pending(key));
++        // compute: built at its first bind, in the call (a failed build: the stand-in stays)
++        assert_eq!(resolve_for_bind(key), key);
++        assert!(!is_pending(key));
++        assert!(timings().failed > before.failed);
++        assert_eq!(released(key), 0);
++        drop(unsafe { Box::from_raw(key as *mut u8) });
++    }
++}
