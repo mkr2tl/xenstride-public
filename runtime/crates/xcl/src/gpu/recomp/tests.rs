@@ -1,3 +1,4 @@
+// Modified by Xenstride on 2026-11-25. See runtime/XENSTRIDE_CHANGES.md.
 //! Instruction semantics checked on the real GPU: small RDNA2 programs are assembled,
 //! recompiled to HLSL, compiled with DXC and run as kernels. Skipped (with a note) when
 //! there is no D3D12 GPU with SM 6.6 + wave64 or no DXC. Tests that use `gpu_waves` also run
@@ -4552,10 +4553,10 @@ fn gpu_more_atomics_sub_dword_scratch_valu() {
     code.extend(glbl("GLOBAL_STORE_SHORT_D16_HI", &[("ADDR", 2), ("DATA", 62), ("SADDR", 2), ("OFFSET", 0x100)]));
     code.extend(glbl("GLOBAL_LOAD_USHORT", &[("VDST", 63), ("ADDR", 2), ("SADDR", 2), ("OFFSET", 0x100)]));
     // scratch (per lane): a dword at 2 · lane + 16, a byte at 2 · lane + 40
-    code.extend(enc("SCRATCH_STORE_DWORD", "ENC_FLAT_SCRATCH", &[("ADDR", 2), ("DATA", 11), ("SADDR", 0x7F), ("OFFSET", 16)]));
-    code.extend(enc("SCRATCH_STORE_BYTE", "ENC_FLAT_SCRATCH", &[("ADDR", 2), ("DATA", 36), ("SADDR", 0x7F), ("OFFSET", 40)]));
-    code.extend(enc("SCRATCH_LOAD_DWORD", "ENC_FLAT_SCRATCH", &[("VDST", 64), ("ADDR", 2), ("SADDR", 0x7F), ("OFFSET", 16)]));
-    code.extend(enc("SCRATCH_LOAD_UBYTE", "ENC_FLAT_SCRATCH", &[("VDST", 65), ("ADDR", 2), ("SADDR", 0x7F), ("OFFSET", 40)]));
+    code.extend(enc("SCRATCH_STORE_DWORD", "ENC_FLAT_SCRATCH", &[("ADDR", 2), ("DATA", 11), ("SADDR", 0x7D), ("OFFSET", 16)]));
+    code.extend(enc("SCRATCH_STORE_BYTE", "ENC_FLAT_SCRATCH", &[("ADDR", 2), ("DATA", 36), ("SADDR", 0x7D), ("OFFSET", 40)]));
+    code.extend(enc("SCRATCH_LOAD_DWORD", "ENC_FLAT_SCRATCH", &[("VDST", 64), ("ADDR", 2), ("SADDR", 0x7D), ("OFFSET", 16)]));
+    code.extend(enc("SCRATCH_LOAD_UBYTE", "ENC_FLAT_SCRATCH", &[("VDST", 65), ("ADDR", 2), ("SADDR", 0x7D), ("OFFSET", 40)]));
     // VALU
     let vv = |n: u64| V + n;
     code.extend(vop3("V_SAD_U8", &[("VDST", 66), ("SRC0", vv(22)), ("SRC1", vv(23)), ("SRC2", vv(24))]));
@@ -7451,4 +7452,151 @@ fn fspx_containers_translate_and_compile() {
     let (n, ok) = (n.into_inner(), ok.into_inner());
     println!("FSPX: {ok} / {n} translated and compiled");
     assert_eq!(ok, n);
+}
+
+/// Xenstride P16: a scratch program whose addresses are proven (v3 = (v2 & 63) << 2, offsets 16
+/// and 40) – bytes 0 .. 300, so 128 dwords instead of 1024 – and one whose base is a raw input.
+fn p16_scratch_program(bounded: bool) -> Vec<u8> {
+    let enc = |n: &'static str, e: &'static str, f: &[(&str, u64)]| encode(n, e, f, None).unwrap_or_else(|x| panic!("{n}: {x}"));
+    let mut code = Vec::new();
+    let base = if bounded {
+        code.extend(enc("V_AND_B32", "ENC_VOP2", &[("VDST", 1), ("SRC0", 128 + 63), ("VSRC1", 2)]));
+        code.extend(enc("V_LSHLREV_B32", "ENC_VOP2", &[("VDST", 3), ("SRC0", 128 + 2), ("VSRC1", 1)]));
+        3
+    } else {
+        2
+    };
+    code.extend(enc("SCRATCH_STORE_DWORD", "ENC_FLAT_SCRATCH", &[("ADDR", base), ("DATA", 11), ("SADDR", 0x7D), ("OFFSET", 16)]));
+    code.extend(enc("SCRATCH_STORE_BYTE", "ENC_FLAT_SCRATCH", &[("ADDR", base), ("DATA", 36), ("SADDR", 0x7D), ("OFFSET", 40)]));
+    code.extend(enc("SCRATCH_LOAD_DWORD", "ENC_FLAT_SCRATCH", &[("VDST", 64), ("ADDR", base), ("SADDR", 0x7D), ("OFFSET", 16)]));
+    code.extend(enc("SCRATCH_LOAD_UBYTE", "ENC_FLAT_SCRATCH", &[("VDST", 65), ("ADDR", base), ("SADDR", 0x7D), ("OFFSET", 40)]));
+    code.extend(enc("S_ENDPGM", "ENC_SOPP", &[]));
+    code
+}
+
+fn p16_hlsl(code: &[u8], full: bool) -> String {
+    super::scratch_bound::set_forced_full_for_tests(full);
+    let t = translate(code, &runner::options(Mode::Kernel)).unwrap();
+    super::scratch_bound::set_forced_full_for_tests(false);
+    t.hlsl
+}
+
+/// The array is sized to the proven addresses and stays 1024 dwords where nothing is proven.
+#[test]
+fn p16_scratch_array_is_sized_to_the_proven_addresses() {
+    let bounded = p16_scratch_program(true);
+    let h = p16_hlsl(&bounded, false);
+    assert!(h.contains("static uint xcl_scratch[128];") && h.contains("& 127u]"), "proven: 128 dwords");
+    assert!(!h.contains("& 1023u]") && !h.contains("xcl_scratch[1024]"), "no full-size scratch index left");
+    assert!(p16_hlsl(&bounded, true).contains("static uint xcl_scratch[1024];"), "XCL_SCRATCH_FULL keeps 1024");
+    let raw = p16_hlsl(&p16_scratch_program(false), false);
+    assert!(raw.contains("static uint xcl_scratch[1024];"), "an unproven base keeps 1024 dwords");
+}
+
+/// P18 (upstream #1361): GFX10.3 scratch with SADDR 0x7F (ST mode) addresses the offset alone,
+/// 0x7D addresses VADDR + offset. A spill at a constant offset reloads its own slot after v0
+/// changed, and its array is sized to that offset.
+fn p18_st_spill_program() -> Vec<u8> {
+    let enc = |n: &'static str, e: &'static str, f: &[(&str, u64)]| encode(n, e, f, None).unwrap_or_else(|x| panic!("{n}: {x}"));
+    let mut code = Vec::new();
+    code.extend(enc("SCRATCH_STORE_DWORD", "ENC_FLAT_SCRATCH", &[("ADDR", 0), ("DATA", 11), ("SADDR", 0x7F), ("OFFSET", 16)]));
+    code.extend(enc("V_MOV_B32", "ENC_VOP1", &[("VDST", 0), ("SRC0", 128 + 40)]));
+    code.extend(enc("SCRATCH_LOAD_DWORD", "ENC_FLAT_SCRATCH", &[("VDST", 64), ("ADDR", 0), ("SADDR", 0x7F), ("OFFSET", 16)]));
+    code.extend(enc("S_ENDPGM", "ENC_SOPP", &[]));
+    code
+}
+
+#[test]
+fn p18_scratch_st_mode_addresses_the_offset_alone() {
+    let h = p16_hlsl(&p18_st_spill_program(), false);
+    assert!(h.contains("= 0u + 0x00000010u;"), "ST mode: the offset alone");
+    assert!(!h.contains("_a = v[0] + ") && !h.contains("_a = v0 + "), "ST mode must not read v0");
+    assert!(h.contains("static uint xcl_scratch[8];"), "a spill at offset 16 needs 8 dwords, not 1024");
+    // VADDR mode keeps its register
+    assert!(p16_hlsl(&p16_scratch_program(true), false).contains("static uint xcl_scratch[128];"));
+}
+
+#[test]
+fn gpu_p18_scratch_st_mode_spill_reloads_its_slot() {
+    if !gpu_ready() {
+        return;
+    }
+    let mut st = KernelState::default();
+    for (l, r) in st.vgpr.iter_mut().enumerate() {
+        r[0] = l as u32; // v0 changes before the reload
+        r[11] = 0x5EED_0000 | l as u32;
+    }
+    let out = runner::run_code(&p18_st_spill_program(), &st, &vec![0u32; 256]).unwrap();
+    for (l, r) in out.vgpr.iter().enumerate() {
+        assert_eq!(r[64], 0x5EED_0000 | l as u32, "lane {l}: the spill came back from another slot");
+    }
+}
+
+fn p16_state() -> KernelState {
+    let mut st = KernelState::default();
+    for (l, r) in st.vgpr.iter_mut().enumerate() {
+        r[2] = 7 * l as u32 + 0x1_0000; // the mask keeps lane bits only
+        r[11] = 0xC0DE_0000 | l as u32;
+        r[36] = 0x90 + l as u32;
+    }
+    st
+}
+
+/// The same program translated with the full and the proven array gives the same registers.
+#[test]
+fn gpu_p16_scratch_bounded_and_full_arrays_give_the_same_results() {
+    if !gpu_ready() {
+        return;
+    }
+    let code = p16_scratch_program(true);
+    let st = p16_state();
+    let mem = vec![0u32; 256];
+    super::scratch_bound::set_forced_full_for_tests(true);
+    let full = runner::run_code(&code, &st, &mem).unwrap();
+    super::scratch_bound::set_forced_full_for_tests(false);
+    let bounded = runner::run_code(&code, &st, &mem).unwrap();
+    for (l, (a, b)) in full.vgpr.iter().zip(&bounded.vgpr).enumerate() {
+        assert_eq!(a, b, "lane {l}: full and bounded arrays differ");
+        assert_eq!((b[64], b[65]), (0xC0DE_0000 | l as u32, 0x90 + l as u32), "lane {l}: scratch dword / byte");
+    }
+}
+
+/// P16 AMD fixture (`--ignored`, run by the bounded supervisor): one translated scratch program,
+/// one dispatch, local video memory and process commit before and after.
+/// P16_SCRATCH_MODE=full|bounded.
+#[test]
+#[ignore]
+fn gpu_p16_measure_scratch_first_dispatch() {
+    if !gpu_ready() {
+        return;
+    }
+    let full = std::env::var("P16_SCRATCH_MODE").as_deref() == Ok("full");
+    let code = p16_scratch_program(true);
+    let st = p16_state();
+    let mem = vec![0u32; 256];
+    let sample = || unsafe {
+        use windows::core::Interface;
+        use windows::Win32::Graphics::Dxgi::*;
+        let f: IDXGIFactory4 = CreateDXGIFactory1().unwrap();
+        let a: IDXGIAdapter3 = f.EnumAdapters1(0).unwrap().cast().unwrap();
+        let mut i = DXGI_QUERY_VIDEO_MEMORY_INFO::default();
+        a.QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &mut i).unwrap();
+        let mut c: windows_sys::Win32::System::ProcessStatus::PROCESS_MEMORY_COUNTERS_EX = std::mem::zeroed();
+        c.cb = std::mem::size_of_val(&c) as u32;
+        windows_sys::Win32::System::ProcessStatus::K32GetProcessMemoryInfo(windows_sys::Win32::System::Threading::GetCurrentProcess(), &mut c as *mut _ as *mut _, c.cb);
+        (i.CurrentUsage, c.PrivateUsage as u64)
+    };
+    // a scratch-free warm-up program: device, queue and compiler set up before the sample
+    let warm = encode("S_ENDPGM", "ENC_SOPP", &[], None).unwrap();
+    runner::run_code(&warm, &st, &mem).unwrap();
+    let (l0, c0) = sample();
+    super::scratch_bound::set_forced_full_for_tests(full);
+    let r = runner::run_code(&code, &st, &mem).unwrap();
+    super::scratch_bound::set_forced_full_for_tests(false);
+    let (l1, c1) = sample();
+    let ok = r.vgpr.iter().enumerate().all(|(l, v)| (v[64], v[65]) == (0xC0DE_0000 | l as u32, 0x90 + l as u32));
+    println!("P16 MEASURE mode={} array_dwords={} local_delta_mib={:.1} commit_delta_mib={:.1} outputs_ok={ok} adapter={:?}",
+        if full { "full" } else { "bounded" }, if full { 1024 } else { 128 },
+        (l1 as f64 - l0 as f64) / 1048576.0, (c1 as f64 - c0 as f64) / 1048576.0, runner::adapter().ok());
+    assert!(ok);
 }

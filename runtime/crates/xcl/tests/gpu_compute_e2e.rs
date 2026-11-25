@@ -1,3 +1,4 @@
+// Modified by Xenstride on 2026-11-25. See runtime/XENSTRIDE_CHANGES.md.
 // Xenstride notice (GPL-2.0-only, section 2a): this file was changed relative to ivall/xcl 9aec53d on 2026-11-24; see XENSTRIDE_CHANGES.md at the runtime root.
 //! End to end without a game executable: a console compute shader in the retail container
 //! layout (DXBC → DXIL part with XDAT → XBCH → FSSM, CS stage descriptor) goes through the
@@ -82,6 +83,77 @@ fn console_cs(code: &[u8], rsrc2: u32, threads: [u32; 3]) -> Vec<u8> {
 }
 
 const V: u64 = 256; // VALU source code of v0
+
+#[test]
+fn offline_compute_pipeline_is_reused_by_the_runtime() {
+    use std::{fs, process::Command};
+    let _serial = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    if xcl::gpu::recomp::dxc::location().is_err() {
+        runner::skip_test("no DXC");
+        return;
+    }
+    if runner::wave64_programs_supported() != Ok(true) {
+        runner::skip_test("no GPU with 32- or 64-lane waves");
+        return;
+    }
+    if xcl::hle::d3d12x::backend() != xcl::hle::d3d12x::Backend::Real {
+        runner::skip_test("no GPU");
+        return;
+    }
+    // Precompile the same memory-window variant that the runtime will request.
+    let windows = xcl::gpu::recomp::pso::mem_windows().to_string();
+    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let dir = std::env::temp_dir().join(format!("xcl-offline-pso-{}-{nonce}", std::process::id()));
+    let input = dir.join("input");
+    let cache = dir.join("cache");
+    fs::create_dir_all(&input).unwrap();
+    fs::write(input.join("kernel.bin"), console_cs(&program(), 2 << 1 | 1 << 7 | 1 << 8 | 1 << 11, [16, 8, 1])).unwrap();
+    let run = |enabled: bool| {
+        let exe = std::env::var_os("XCL_P19_OFFLINE_EXE").map(std::path::PathBuf::from).unwrap_or_else(|| env!("CARGO_BIN_EXE_xcl").into());
+        let out = Command::new(exe).arg("shaders").arg(&input)
+            .args(["--precompile", "--pipelines", "--windows", &windows]).env("XCL_DXIL_CACHE", &cache)
+            .env("XCL_PSO_DISK_CACHE", if enabled { "1" } else { "0" }).output().unwrap();
+        let text = String::from_utf8_lossy(&out.stdout).into_owned();
+        println!("offline cache enabled={enabled}: {text}");
+        if let Some(evidence) = std::env::var_os("XCL_P19_EVIDENCE") {
+            let name = format!("offline-{}-{}.log", enabled as u8, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos());
+            fs::write(std::path::Path::new(&evidence).join(name), format!("{text}\n{}", String::from_utf8_lossy(&out.stderr))).unwrap();
+        }
+        assert!(out.status.success() && text.contains("pipelines made on the GPU 1, refused 0"), "{text}\n{}", String::from_utf8_lossy(&out.stderr));
+        text
+    };
+    run(false);
+    assert!(!cache.join("driver").exists());
+    run(true);
+    let dxil_file = fs::read_dir(&cache).unwrap().flatten().map(|e| e.path())
+        .find(|p| p.extension().is_some_and(|ext| ext == "dxil")).unwrap();
+    let dxil = fs::read(dxil_file).unwrap();
+    let name = format!("{:016x}-{:x}-0.pso", xcl::gpu::shader::fnv64(&dxil), dxil.len());
+    let driver_file = cache.join("driver").join(name);
+    assert!(driver_file.metadata().unwrap().len() > 0);
+    let warm = run(true);
+    // Start with no in-process PSO cache and exercise the same hook and dispatch a title uses.
+    let runtime = Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", "console_wave64_compute_through_the_pso_hook_dispatch_and_read_back", "--nocapture"])
+        .env("XCL_DXIL_CACHE", &cache)
+        .env("XCL_PSO_DISK_CACHE", "1")
+        .output().unwrap();
+    // A blob from an earlier driver can be refused. The normal build must still succeed.
+    fs::write(&driver_file, b"invalid cached pipeline").unwrap();
+    run(true);
+    let _ = fs::remove_dir_all(&dir);
+    assert!(warm.contains("pipelines loaded from the driver cache 1"), "{warm}");
+    let runtime_log = String::from_utf8_lossy(&runtime.stderr);
+    println!("runtime: {}\n{runtime_log}", String::from_utf8_lossy(&runtime.stdout));
+    if let Some(evidence) = std::env::var_os("XCL_P19_EVIDENCE") {
+        fs::write(std::path::Path::new(&evidence).join("runtime.log"), format!("{}\n{runtime_log}", String::from_utf8_lossy(&runtime.stdout))).unwrap();
+    }
+    assert!(
+        runtime.status.success() && runtime_log.contains("compute pipelines made from the driver's blob of an earlier run"),
+        "runtime did not dispatch with the precompiled driver blob: {}\n{runtime_log}",
+        String::from_utf8_lossy(&runtime.stdout)
+    );
+}
 
 /// 16×8 threads per group (two wave64s), s[0:1] = output base and row width, TGID_X/Y in
 /// s2/s3, thread ids in v0/v1: each thread writes its global (x, y), and through LDS +
@@ -182,6 +254,10 @@ fn console_wave64_compute_through_the_pso_hook_dispatch_and_read_back() {
             assert_eq!(out[at + 1], (px | py << 16) as u32, "({x}, {y}): value of thread {} through LDS", 127 - i);
         }
     }
+    let mut memory: windows_sys::Win32::System::ProcessStatus::PROCESS_MEMORY_COUNTERS_EX = unsafe { std::mem::zeroed() };
+    memory.cb = std::mem::size_of_val(&memory) as u32;
+    assert_ne!(unsafe { windows_sys::Win32::System::ProcessStatus::K32GetProcessMemoryInfo(windows_sys::Win32::System::Threading::GetCurrentProcess(), &mut memory as *mut _ as _, memory.cb) }, 0);
+    println!("P19 runtime: DXC API us {}, driver API us {}, DXC compilations {}, memory windows {}, private bytes {}, video bytes {:?}, verified 1536 values", xcl::gpu::recomp::dxc::compile_api_us(), real::compute_driver_api_us(), xcl::gpu::recomp::dxc::cache_stats().compilations, xcl::gpu::recomp::pso::mem_windows(), memory.PrivateUsage, real::video_memory());
 }
 
 /// Cold DXIL cache: `CreateComputePipelineState` returns a stand-in immediately and compiles

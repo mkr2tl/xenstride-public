@@ -1,7 +1,7 @@
 # Xenstride
 
 Xbox Series-to-Windows compatibility research, built around [XCL](https://github.com/ivall/xcl).
-Gameplay is not demonstrated by this release.
+Experimental runtime v0.2.0. GTA VI gameplay has not been reached.
 
 This repository contains the complete, buildable Xenstride runtime (an XCL derivative,
 GPL-2.0-only), standalone binary-format tools, a small native PE test loader, and earlier
@@ -11,12 +11,13 @@ ready-to-play PC port.
 ## Contents
 
 - [Runtime](runtime/) (GPL-2.0-only): XCL at upstream `9aec53d` plus the Xenstride changes listed in
-  [runtime/XENSTRIDE_CHANGES.md](runtime/XENSTRIDE_CHANGES.md). Build it with
+  [runtime/XENSTRIDE_CHANGES.md](runtime/XENSTRIDE_CHANGES.md). v0.2.0 adds offline compute
+  cache reuse, corrected split-barrier tracking, and shader scratch fixes. Build it with
   [docs/RUNTIME.md](docs/RUNTIME.md); test a release build with [docs/TESTERS.md](docs/TESTERS.md).
 - [MIT tools](tools-mit/): bounded PE, DXBC, RDS5 and RPF9 inspection; an owned-fixture PE loader.
 - [Earlier GPL module contributions](xcl-gpl/): the pipeline-scheduling snapshots and patches of the
   previous publication. The same changes are part of `runtime/`.
-- [Evidence and known limitations](docs/STATUS.md), [provenance](PROVENANCE.md), [milestones](docs/HISTORY.md).
+- [Evidence and limits](docs/STATUS.md), [changelog](CHANGELOG.md), [provenance](PROVENANCE.md).
 
 The runtime is XCL's work first: its loader, Xbox services, GPU translation and contributors are
 not Xenstride inventions. Xenstride adds scheduling, memory, diagnostics and test changes on top.

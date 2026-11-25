@@ -1,3 +1,4 @@
+// Modified by Xenstride on 2026-11-25. See runtime/XENSTRIDE_CHANGES.md.
 //! RDNA2 → HLSL recompiler (design §5.7a / §5.7b).
 //!
 //! Execution model – exact without control-flow structurisation:
@@ -59,6 +60,7 @@ pub mod x64_masks;
 pub mod pso;
 pub use emit::mesh_passthrough;
 pub mod runner;
+pub mod scratch_bound;
 #[cfg(test)]
 mod tests;
 pub mod upper_lanes;
@@ -1335,6 +1337,7 @@ pub fn translate(code: &[u8], opt: &Options) -> Result<Translation, String> {
     }
     let mut em = emit::Em::new(opt.clone());
     em.configure_round_modes(&insts, branches == 0);
+    em.configure_scratch(&insts);
     em.static_ss = constant_samplers(&insts, &leaders);
     // split wave64: masks only read lane by lane skip the halves' exchange (geometry mode
     // continues from the ES into the GS through s_setpc: left as it is)

@@ -1,8 +1,8 @@
 # Testing a release build
 
-A release provides `Xenstride-runtime-<version>-windows-x64.zip` (the runtime, `xcl.exe`) and
-`Xenstride-runtime-<version>-source.zip` (the exact source it was built from), with
-`SHA256SUMS.txt`. This is experimental software for compatibility research.
+A release provides `Xenstride-runtime-<version>-windows-x64.zip` (the runtime, `xcl.exe`) ,
+`Xenstride-runtime-<version>-source.zip` (the exact source it was built from), and a
+locked dependency-source archive. `SHA256SUMS.txt` covers the archives. This is experimental software for compatibility research.
 
 **Use only games and files you own or are otherwise authorised to use.** The runtime works on
 already-unpacked game folders; it does not download, decrypt or unpack game packages and contains
@@ -41,7 +41,6 @@ of copyrighted content.
 
 ## Known limitations
 
-See [docs/STATUS.md](STATUS.md). In short: the Xenstride project has not validated this release on
-any game (upstream XCL's own game list is in runtime/README.md and was not re-checked here); a
-newer retail title stops at the end of its world loading; BCPack-compressed textures and some
-mesh pipelines are refused; memory use while a world loads is high.
+See [STATUS.md](STATUS.md). GTA VI gameplay has not been reached. This build has
+no commercial-title validation. The lab BCPack port is excluded, some mesh
+pipelines are still refused, and world loading can use substantial memory.

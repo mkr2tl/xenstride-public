@@ -1,40 +1,47 @@
-# Status at the P14 boundary (runtime 0.1.0)
+# Runtime v0.2.0 status
 
-Runtime source: ivall/xcl `9aec53d` + local P14 commit `fe6a013`, exported to `runtime/`.
-All results below are on WARP (Microsoft's software renderer) or synthetic fixtures unless
-stated. No game material is part of any test.
+GTA VI gameplay has not been reached. This experimental release is a selected set
+of changes on top of the public v0.1.0 source. The P29 laboratory executable is excluded.
 
-| Area | Evidence | Scope / limit |
+## Evidence
+
+| Area | Observed result | Scope |
 | --- | --- | --- |
-| Runtime build | `cargo build --workspace --release --locked --offline` of the exported tree succeeds (Rust 1.100, MSVC) | Windows x64 only |
-| Runtime library suite | 765 pass, 0 fail, 25 ignored (release, WARP) | Runtime skips of GPU-only paths are not GPU coverage |
-| Integration suites | All pass except 2 end-to-end wrappers (3 checks) | WARP cannot create the 4 GiB sparse windows: coherent-window headroom, AS SRV descriptor and (intermittently) descriptor heaps in window 0 |
-| Physical GPU use by tests | None: the test guards force WARP; a loaded-driver audit found only `d3d10warp.dll` | `XCL_TEST_HARDWARE_GPU=1` opts in |
-| Compute build-ahead (port of XCL #889) | 24 compute pipelines of ~300 ms bound 4 s after creation, 4 busy threads: bind waits 6.0–7.1 s before, 0 ms after (3/3) | With every core busy: 6.1–14.3 s, longest bind 2.85 s (0.5 s without); `XCL_PSO_PRELOAD_COMPUTE=0` turns it off |
-| Pipeline worker priority | Synthetic: 0.3 s of build work waited 40 s before, ~3 s after under full load; a starvation window (up to 50 s) closed | Artificial CPU contention; not a gameplay FPS result |
-| State-aware prebuild keys | One shader set in 64 states yields 64 keys | Does not establish the cause of real GPU memory growth |
-| Frame pacing (test title) | 30 / 60 FPS: average 30.00 / 60.00, 1 % low 29.3 / 59.0, p99 33.4 / 16.7 ms (idle or 4 busy threads) | WARP; with WARP rendering on a saturated CPU the 1 % low falls to ~4 FPS |
-| Graphics regressions | 4 synthetic title cases × 3 runs: no check passing in P13 fails in P14; RDNA2 triangle pixels identical to the reference | Synthetic coverage only |
+| Compute PSO cache | P19 synthetic AMD runs accepted driver blobs produced by the offline path on native and split compute. Readbacks matched cold runs. | No production compilation time or gameplay gain established. Cache blobs depend on a compatible driver and matching pipeline inputs. |
+| Shader scratch | In a bounded RX 9060 XT fixture, 128 proven dwords per lane matched a 1,024-dword reference. Peak process commit was 47?51 MiB with the bound and 303?304 MiB at full size. | A workload-specific result. Unproven addresses retain the full array. |
+| Split resource barriers | The regression covers BEGIN_ONLY, END_ONLY and complete transitions. | State tracking; no title performance claim. |
+| Pipeline counters | Build-ahead jobs count toward started, running and build-work time. | Diagnostic correction. |
 
-## Known limitations (unresolved)
+## Release candidate checks
 
-- A newer retail title's world loading still ends in the title's own no-frame watchdog: compute
-  pipelines first used during loading are compiled by the driver at their first bind (up to ~20 s).
-  Nothing in this release skips GPU work to avoid it.
-- High memory use while a world loads: in one 16 GB-GPU run, ~9.7 GB of render-target pages and
-  ~29 GB of process commit. No leak was found; no reduction is implemented.
-- BCPack-compressed textures are refused (upstream decoders are not integrated: their texel
-  output cannot yet be validated against independent fixtures); mesh pipelines with a mesh
-  shader in the amplification slot are refused; buffers outside the coherent window get empty
-  views; several console-only D3D12 extensions are stubs.
-- A graphics pipeline still being built draws nothing for those draws (stand-in).
-- Physical-GPU behaviour of these changes has not been validated by an automated suite.
+- Windows x64, Rust 1.100.0/MSVC: locked release workspace build completed.
+- WARP library suite: 773 passed, 0 failed, 26 ignored. GPU capability
+  skips are not coverage. The suite runs serially because some pipeline tests
+  share process-wide state.
+- RX 9060 XT: the packaged executable generated a compute driver blob. The
+  integration test loaded it in a distinct runtime process, checked the GPU
+  readback, and rebuilt a deliberately invalid blob successfully.
+- MIT tools: 84 passed, 1 skipped on each of Python 3.12 and 3.14 on Windows.
 
-## Reproduction
+## Why the P29 binary is excluded
 
-Follow docs/RUNTIME.md. Library tests: `cargo test -p xcl --lib --release --locked`; integration
-suites: `cargo build --workspace --release --locked` first, then `cargo test -p xcl --release
---locked --tests`. Synthetic benchmarks are `#[ignore]` tests run with `--ignored --nocapture`
-(`p14_bench_compute_pipelines_made_while_loading_and_bound_later`, with `P14_BENCH_BUSY` and
-`XCL_PSO_PRELOAD_COMPUTE`). No instructions for acquiring or running an unauthorised title are
-provided. Public recordings require a separate rights/privacy review and owner approval.
+Two development captures verified by executable hash reported peak private
+process commit of 32.5 GiB for P28 and 46.8 GiB for P29 (+44%). Available system
+RAM fell to 489 MiB in the P29 capture. The captures did not control all cache
+and background conditions and do not establish causality. Both stopped
+progressing after the same last logged presentation milestone. A separate
+synthetic test showed a shorter initial bind under injected compiler contention,
+but does not resolve the memory finding.
+
+The public candidate omits that scheduling change, the lab BCPack port, ASD,
+private captures, and all compiled shader and driver caches. Graphics PSO cache
+changes from the laboratory build are also outside this release. Only the
+changes listed in the changelog are included. The earlier public runtime's
+limitations remain relevant to this experimental build.
+
+## Reproduce
+
+See [runtime build and tests](RUNTIME.md) and [tester notes](TESTERS.md). Use
+only authorized workloads. A passing build or synthetic test does not establish
+compatibility with commercial titles. No commercial workload was run for this
+release review.

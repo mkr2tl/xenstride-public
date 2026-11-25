@@ -23,6 +23,24 @@ cargo build --workspace --release --locked   # target\release\xcl.exe
 ```
 
 `--locked` builds the exact dependency versions of `Cargo.lock`, those of the published binaries.
+The distributed Windows build uses the release profile with debug info disabled,
+symbols stripped, and local source and user paths remapped. The build recipe is
+below. Run it from the runtime workspace in a fresh PowerShell process.
+
+```powershell
+$source = (Get-Location).ProviderPath
+$env:CARGO_PROFILE_RELEASE_DEBUG = '0'
+$env:CARGO_PROFILE_RELEASE_STRIP = 'symbols'
+$pathMap = @(
+    "--remap-path-prefix=$source=xenstride/runtime"
+    "--remap-path-prefix=$($source.Replace('\','/'))=xenstride/runtime"
+    "--remap-path-prefix=$env:USERPROFILE=/build-user"
+    "--remap-path-prefix=$($env:USERPROFILE.Replace('\','/'))=/build-user"
+)
+$env:CARGO_ENCODED_RUSTFLAGS = $pathMap -join [char]31
+cargo +1.100.0 build --release --locked -p xcl --bin xcl
+```
+
 The `lab` profile (`--profile lab`) is release with full debug info, as used for development.
 
 ## Tests
@@ -30,7 +48,7 @@ The `lab` profile (`--profile lab`) is release with full debug info, as used for
 ```powershell
 cd runtime
 cargo build --workspace --release --locked               # the test title the end-to-end tests run
-cargo test -p xcl --release --locked --lib               # library suite
+cargo test -p xcl --release --locked --lib -- --test-threads=1
 cargo test -p xcl --release --locked --tests             # library + integration suites
 ```
 
@@ -39,8 +57,9 @@ cargo test -p xcl --release --locked --tests             # library + integration
   `XCL_TEST_HARDWARE_GPU=1` lets the tests use the default adapter.
 - `XCL_GPU_AUDIT_DIR=<folder>` makes each integration test binary write, at exit, the D3D12 user-mode
   drivers it loaded (`d3d10warp.dll` = WARP) to `<folder>\integration-tests.tsv`.
-- Expected on WARP: the library suite passes; two end-to-end wrappers fail on three checks WARP
-  cannot satisfy (it cannot create 4 GiB sparse windows). See docs/STATUS.md.
+- The runtime CI runs the library suite on WARP. Some end-to-end paths need
+  physical-GPU capabilities such as wave64 and 4 GiB sparse windows; read the
+  skip messages before interpreting a pass.
 - Benchmarks are `#[ignore]` tests, e.g.
   `cargo test -p xcl --release --lib p14_bench -- --ignored --nocapture`.
 

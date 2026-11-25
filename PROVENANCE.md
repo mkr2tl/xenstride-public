@@ -1,10 +1,12 @@
 # Provenance
 
-Prepared 2026-11-24 from immutable local commits. No private Git history is bundled.
+The v0.1.0 export was prepared on 2026-11-24. The v0.2.0 selection was prepared on
+2026-11-25 from immutable commits in the P29 lineage. No private Git history is bundled.
 
 | Material | Origin | Licence / decision |
 | --- | --- | --- |
 | runtime | public ivall/xcl `9aec53df7004bd9018ef3df67532f85d66ee261c` + local P14 commit `fe6a01375f6a5542d77674f7e965960898acc32f` (53 local commits) | GPL-2.0-only; every changed file carries a dated notice; see runtime/XENSTRIDE_CHANGES.md |
+| v0.2.0 runtime changes | selected source diffs from the lab lineage applied to the public v0.1.0 tree | GPL-2.0-only; upstream and local source IDs in runtime/XENSTRIDE_CHANGES.md |
 | tools-mit | Xenstride tools commit `e7e4024c837657ec5c52bb053e7a2846f44d9fbc` | MIT; existing provenance retained |
 | xcl-gpl/before | XCL-derived module at `12ae36a49f587c62f101bfd6ce167f7fb739de08` | GPL-2.0-only |
 | priority patch | local `31514c52cea1eab5c7744320fcf40cf09fb43042` | GPL-2.0-only; worker priority change and tests |
@@ -17,7 +19,7 @@ upstream context; they describe XCL, not Xenstride. The local commits were recor
 MKR-2TL, a lab identity and one upstream contributor's cherry-picked change (see
 runtime/XENSTRIDE_CHANGES.md); work was assisted by Claude Code and OpenAI Codex.
 
-The runtime export (`runtime/XENSTRIDE_EXPORT.txt`) applies only these changes to the local
+The v0.1.0 runtime export (`runtime/XENSTRIDE_EXPORT.txt`) applied only these changes to the local
 commit: comments naming the private development lab read `Xenstride`; two byte-string literals
 use `\0` escapes instead of raw NUL bytes; one 8-byte binary test fixture is written by its test
 harness instead of being stored; a dated notice comment heads each changed file. The exported

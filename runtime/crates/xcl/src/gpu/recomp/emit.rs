@@ -1,3 +1,4 @@
+// Modified by Xenstride on 2026-11-25. See runtime/XENSTRIDE_CHANGES.md.
 //! Instruction semantics: one RDNA2 instruction → HLSL statements.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -37,6 +38,8 @@ pub(super) struct Em {
     uses_lds: bool,
     /// scratch_* used: declare the per-lane private memory
     uses_scratch: bool,
+    /// Xenstride P16: dwords of `xcl_scratch` (a power of two; `scratch_bound::dwords`)
+    scratch_dwords: u32,
     /// split wave64 (`x64`): words one exchange carries (1: masks and lane reads, up to 16:
     /// coherent scalar loads, 32: `ds_bpermute`)
     x64_words: usize,
@@ -479,6 +482,7 @@ impl Em {
             ps_done: false,
             uses_lds: false,
             uses_scratch: false,
+            scratch_dwords: super::scratch_bound::FULL,
             x64_words: 1,
             x64_whole_live: BTreeMap::new(),
             upper: None,
@@ -502,6 +506,12 @@ impl Em {
         };
         let hw_lanes = if self.x64() || !self.opt.wave64 { 32 } else { 64 };
         Some(threads.div_ceil(hw_lanes).max(1))
+    }
+
+    /// Xenstride P16: size `xcl_scratch` to what the program's scratch addresses provably reach
+    /// (`scratch_bound`); `XCL_SCRATCH_FULL=1` keeps 1024 dwords per lane.
+    pub fn configure_scratch(&mut self, insts: &[Decoded]) {
+        self.scratch_dwords = if super::scratch_bound::forced_full() { super::scratch_bound::FULL } else { super::scratch_bound::dwords(insts) };
     }
 
     /// Pre-scan the program for f16/f64 rounding-sensitive ops, non-default `MODE[3:2]` writes,
@@ -3846,7 +3856,13 @@ impl Em {
         let f = |n: &str| rdna2::field_value(d.enc, &d.words, n).unwrap_or(0);
         self.uses_scratch = true;
         let saddr = f("SADDR");
-        let base = if saddr != 0x7D && saddr != 0x7F { self.sreg(saddr) } else { self.vreg(f("ADDR")) };
+        // GFX10.3: SADDR 0x7D (NULL) addresses VADDR + offset, 0x7F (ST mode) the offset alone
+        // (llvm-mc -mcpu=gfx1030; upstream #1361 / #1365)
+        let base = match saddr {
+            0x7F => "0u".to_string(),
+            0x7D => self.vreg(f("ADDR")),
+            s => self.sreg(s),
+        };
         let raw = f("OFFSET") as u32;
         let off = (((raw << 20) as i32) >> 20) as u32;
         let t = self.t();
@@ -3875,7 +3891,7 @@ impl Em {
         };
         let mut st = Vec::new();
         for i in 0..count {
-            let slot = format!("xcl_scratch[(({t}_a + {}u) >> 2) & 1023u]", 4 * i);
+            let slot = format!("xcl_scratch[(({t}_a + {}u) >> 2) & {}u]", 4 * i, self.scratch_dwords - 1);
             if store {
                 st.push(format!("{slot} = {};", self.vreg(f("DATA") + i)));
             } else {
@@ -4274,7 +4290,7 @@ impl Em {
         let _ = writeln!(h, "static const uint FMT_INFO[78] = {{ {} }};", infos.join(", "));
         h.push_str(PRELUDE_MEM);
         if self.uses_scratch {
-            h.push_str(PRELUDE_SCRATCH);
+            h.push_str(&prelude_scratch(self.scratch_dwords));
         }
         if self.dynamic_f16_rm {
             h.push_str("static uint xcl_fp16_rm = 0u;\n");
@@ -5232,7 +5248,12 @@ fn d16_merge(v: &str, raw: &str, n: u32, signed: bool, half: u32) -> String {
     }
 }
 
-/// Per-lane private memory of scratch_* (static = thread-private in HLSL; 4 KB per lane).
+/// Per-lane private memory of scratch_* (static = thread-private in HLSL), `n` dwords per lane
+/// (a power of two; 1024 = 4 KB unless `scratch_bound` proves less).
+fn prelude_scratch(n: u32) -> String {
+    PRELUDE_SCRATCH.replace("[1024]", &format!("[{n}]")).replace("1023u", &format!("{}u", n - 1))
+}
+
 const PRELUDE_SCRATCH: &str = r#"
 static uint xcl_scratch[1024];
 uint scr_ld(uint a) { uint b = (a >> 2) & 1023u; uint s = (a & 3u) * 8u; uint lo = xcl_scratch[b]; uint hi = xcl_scratch[(b + 1u) & 1023u]; return select(s == 0u, lo, (lo >> s) | (hi << ((32u - s) & 31u))); }

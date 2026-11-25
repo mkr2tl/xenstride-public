@@ -1,3 +1,4 @@
+// Modified by Xenstride on 2026-11-25. See runtime/XENSTRIDE_CHANGES.md.
 // Xenstride notice (GPL-2.0-only, section 2a): this file was changed relative to ivall/xcl 9aec53d on 2026-11-23 to 2026-11-24; see XENSTRIDE_CHANGES.md at the runtime root.
 //! The console command list's own methods.
 //!
@@ -3508,13 +3509,32 @@ pub(super) unsafe extern "system" fn resource_barrier_x(this: *mut c_void, n: u3
     }
     // the states uploads into textures kept in step start from once this list has run
     if super::title_textures::any() {
-        let t: Vec<(usize, u32, D3D12_RESOURCE_STATES)> =
-            out.iter().filter(|b| b[0] == 0).map(|b| ((b[2] as u64 | (b[3] as u64) << 32) as usize, b[4], D3D12_RESOURCE_STATES(b[6] as i32))).collect();
-        super::title_textures::note_transitions(this as usize, &t);
+        let t = completed_transitions(&out);
+        if !t.is_empty() {
+            super::title_textures::note_transitions(this as usize, &t);
+        }
     }
     if !out.is_empty() {
         pc::<unsafe extern "system" fn(*mut c_void, u32, *const [u32; 8])>(this, PC_RESOURCE_BARRIER)(this, out.len() as u32, out.as_ptr());
     }
+}
+
+/// `D3D12_RESOURCE_BARRIER_FLAG_BEGIN_ONLY`: starts a split transition without moving the
+/// resource into `StateAfter` yet (that happens on the matching `END_ONLY` barrier).
+const BARRIER_FLAG_BEGIN_ONLY: u32 = 1;
+
+fn completed_transitions(barriers: &[[u32; 8]]) -> Vec<(usize, u32, D3D12_RESOURCE_STATES)> {
+    barriers
+        .iter()
+        .filter(|b| b[0] == 0 && b[1] & BARRIER_FLAG_BEGIN_ONLY == 0)
+        .map(|b| {
+            (
+                (b[2] as u64 | (b[3] as u64) << 32) as usize,
+                b[4],
+                D3D12_RESOURCE_STATES(b[6] as i32),
+            )
+        })
+        .collect()
 }
 
 /// D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER | INDEX_BUFFER: valid for buffers only
@@ -5825,5 +5845,32 @@ mod tests {
                 gr.cells.remove(&va_c);
             }
         }
+    }
+
+    #[test]
+    fn completed_transitions_skips_split_begin_only_barriers() {
+        let res_a: u64 = 0x0000_0123_4567_89A0;
+        let res_b: u64 = 0x0000_0234_5678_9AB0;
+        let mk = |ty: u32, flags: u32, res: u64, sub: u32, before: u32, after: u32| -> [u32; 8] {
+            [ty, flags, res as u32, (res >> 32) as u32, sub, before, after, 0]
+        };
+        let barriers = [
+            // Normal transition (Flags = NONE = 0) -> recorded
+            mk(0, 0, res_a, 0, 0x80, 0x4),
+            // Split BEGIN_ONLY (Flags = 1) -> must NOT be recorded as StateAfter yet
+            mk(0, 1, res_b, 2, 0x80, 0x400),
+            // Split END_ONLY (Flags = 2) -> recorded
+            mk(0, 2, res_b, 3, 0x80, 0x400),
+            // Non-transition barriers (aliasing = 1, UAV = 2) -> ignored
+            mk(1, 0, res_a, 0, 0, 0),
+            mk(2, 0, 0, 0, 0, 0),
+        ];
+        assert_eq!(
+            completed_transitions(&barriers),
+            vec![
+                (res_a as usize, 0, D3D12_RESOURCE_STATES(0x4)),
+                (res_b as usize, 3, D3D12_RESOURCE_STATES(0x400)),
+            ]
+        );
     }
 }

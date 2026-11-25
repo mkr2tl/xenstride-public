@@ -1,3 +1,4 @@
+// Modified by Xenstride on 2026-11-25. See runtime/XENSTRIDE_CHANGES.md.
 // Xenstride notice (GPL-2.0-only, section 2a): this file was changed relative to ivall/xcl 9aec53d on 2026-11-23 to 2026-11-24; see XENSTRIDE_CHANGES.md at the runtime root.
 //! Non-blocking pipeline creation. Translating a console shader takes milliseconds; compiling
 //! the HLSL with DXC takes 0.2 s to seconds, and a title creates thousands of pipelines while
@@ -92,13 +93,19 @@ fn micros(d: std::time::Duration) -> usize {
 
 fn run(p: &Pending, job: Job) {
     QUEUE_US.fetch_add(micros(p.queued_at.lock().unwrap().elapsed()), Ordering::Relaxed);
+    complete(p, measured_build(job));
+}
+
+// Every execution path, including preload, contributes to the same build counters.
+// Queue delay stays in `run`: preload is not a demand-queue wait.
+fn measured_build(job: Job) -> usize {
     STARTED.fetch_add(1, Ordering::Relaxed);
     RUNNING.fetch_add(1, Ordering::Relaxed);
     let started = std::time::Instant::now();
     let real = job();
     BUILD_US.fetch_add(micros(started.elapsed()), Ordering::Relaxed);
     RUNNING.fetch_sub(1, Ordering::Relaxed);
-    complete(p, real);
+    real
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -474,7 +481,7 @@ fn preload() -> Option<&'static Preload> {
                         p.builder.store(0, Ordering::Release);
                     }
                     if let Some(job) = job {
-                        let real = job();
+                        let real = measured_build(job);
                         p.builder.store(0, Ordering::Release);
                         unsafe {
                             use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_LOWEST};
@@ -496,6 +503,37 @@ fn preload() -> Option<&'static Preload> {
 #[cfg(test)]
 mod used_tests {
     use super::*;
+
+    #[test]
+    fn p15_ahead_builds_report_running_started_and_work_time() {
+        let (standin, key) = (0x7E57_7015usize, 0x5EED_0015u64);
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (finish_tx, finish_rx) = mpsc::channel();
+        let before = timings();
+        TEST_COMMIT_FREE.store(8usize << 30, Ordering::Relaxed);
+        used::earlier_run_used(key);
+        submit_lazy(standin, false, Box::new(move || {
+            entered_tx.send(()).unwrap();
+            finish_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+            0 // failure is measured too; no fake COM object to release
+        }), key);
+        entered_rx.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        let during = timings();
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        finish_tx.send(()).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while is_pending(standin) && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+        let after = timings();
+        TEST_COMMIT_FREE.store(usize::MAX, Ordering::Relaxed);
+        released(standin);
+        assert!(during.started > before.started, "ahead jobs must count as started");
+        assert!(during.running > before.running, "ahead jobs must count while running");
+        assert_eq!(after.running, before.running);
+        assert!(after.build_work_us >= before.build_work_us + 20_000);
+        assert!(after.failed > before.failed);
+    }
 
     #[test]
     fn the_keys_of_a_file_are_read_and_other_lines_passed_over() {

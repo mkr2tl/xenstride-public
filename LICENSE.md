@@ -13,7 +13,7 @@ There is no blanket MIT licence for this repository.
 A release of `xcl.exe` is distributed only together with:
 
 - the complete corresponding source: the source archive of the same tagged commit, attached to
-  the same GitHub release (GPL-2.0 section 3(a)), with `Cargo.lock` for the exact dependencies;
+  the same GitHub release (GPL-2.0 section 3(a)), and the locked Windows dependency-source archive;
 - `LICENSE` (GPL-2.0), `THIRD_PARTY.md` (code ported from other projects) and
   `THIRD_PARTY_LICENSES.txt` (every Rust crate linked into the binary, its licence and notices,
   including the BSD-2-Clause notice of the bundled udis86 C library).

@@ -132,3 +132,19 @@ Development used Claude Code and OpenAI Codex; results were checked by tests on 
 - `tests/data/testgame/data/sub/nested.bin` (bytes 0..7) is written by `crates/xcl/tests/e2e.rs`
   instead of being stored, so the public tree holds text files only.
 - The notice comments above were added to each changed file.
+
+## v0.2.0 selection (2026-11-25)
+
+Selected source changes applied to the public v0.1.0 tree. Updated source files
+carry a new date. This export does not import the lab branch's Git ancestry.
+
+| Local source commit | Change and credit |
+| --- | --- |
+| 9871494ccf1b75cc53f072f48ae5a25a0bb42c7e | Build-ahead diagnostics from the Codex P15 audit, integrated with Claude Code. |
+| b8adb1efd1d3a521952a555f7153812a6df90090 | Conservative scratch allocation bounds, developed with Claude Code. |
+| 0b68fdaf5c67bdcb91fbac104c824ee5ea9f74a8 | GFX10.3 ST scratch addressing, developed with Claude Code. Equivalent XCL work appears in #1365 and #1377. |
+| f25bd8f04e0b0b586f07c4f90f76886f428bad9e | Offline compute cache reuse, selectively integrated with OpenAI Codex from [XCL #744 (CallMeBrado)](https://github.com/xcl-dev/xcl/pull/744) (head 07c535d85dbf084ed6692cbd851744986483e6f3) and [XCL #1469 (AkshatPal2007)](https://github.com/xcl-dev/xcl/pull/1469) (head 188f8ac84f4b2093c7730013e41f3d5420a866b4). |
+| 8d28d1df650ce1a661f04ce0a6fd0f2e416593f2 | Split resource barrier state tracking, by Alp Pesen, from [XCL #1654](https://github.com/xcl-dev/xcl/pull/1654), commit 9015e35965fd2b7f2b54ef5b3407923886eb176f. |
+
+The upstream XCL contributions remain under GPL-2.0-only. The v0.1.0 upstream
+base, Cargo dependency lockfile, and third-party sources are retained.

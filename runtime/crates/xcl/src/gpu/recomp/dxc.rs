@@ -1,3 +1,4 @@
+// Modified by Xenstride on 2026-11-25. See runtime/XENSTRIDE_CHANGES.md.
 //! In-process HLSL → DXIL compilation with DXC.
 //!
 //! `dxcompiler.dll` is not part of Windows, so it is loaded at run time from
@@ -486,7 +487,10 @@ fn compile_here(src: &str, entry: &str, profile: &str, extra: &[&str]) -> Result
     let ptrs: Vec<PCWSTR> = args.iter().map(|a| PCWSTR(a.as_ptr())).collect();
     let buf = DxcBuffer { Ptr: src.as_ptr() as *const c_void, Size: src.len(), Encoding: DXC_CP_UTF8.0 };
     unsafe {
-        let r: IDxcResult = c.Compile(&buf, Some(&ptrs), None).map_err(|e| format!("Compile: {e}"))?;
+        let started = std::time::Instant::now();
+        let result: windows::core::Result<IDxcResult> = c.Compile(&buf, Some(&ptrs), None);
+        COMPILE_API_US.fetch_add(started.elapsed().as_micros().min(u64::MAX as u128) as u64, Ordering::Relaxed);
+        let r = result.map_err(|e| format!("Compile: {e}"))?;
         let status = r.GetStatus().map_err(|e| format!("{e}"))?;
         if status.is_err() {
             let msg = r
@@ -503,6 +507,10 @@ fn compile_here(src: &str, entry: &str, profile: &str, extra: &[&str]) -> Result
         Ok(std::slice::from_raw_parts(blob.GetBufferPointer() as *const u8, blob.GetBufferSize()).to_vec())
     }
 }
+
+static COMPILE_API_US: AtomicU64 = AtomicU64::new(0);
+/// Cumulative time inside DXC's Compile API, excluding queue and memory admission waits.
+pub fn compile_api_us() -> u64 { COMPILE_API_US.load(Ordering::Relaxed) }
 
 pub(super) fn toolchain_identity() -> &'static str {
     static IDENTITY: OnceLock<String> = OnceLock::new();

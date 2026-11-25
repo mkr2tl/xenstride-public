@@ -36,8 +36,10 @@ jobs:
         working-directory: .
         run: python -B scripts/check_publication.py --require-history
   runtime:
-    # GPL runtime: locked build and the library suite. Tests use WARP (no GPU on the runner).
+    # GPL runtime: locked build and the library suite on WARP.
     runs-on: windows-latest
+    env:
+      XCL_ADAPTER: warp
     timeout-minutes: 60
     defaults:
       run:
@@ -52,4 +54,5 @@ jobs:
       - name: Build the workspace (exact Cargo.lock)
         run: cargo +1.100.0 build --workspace --release --locked
       - name: Library suite on WARP
-        run: cargo +1.100.0 test -p xcl --release --locked --lib
+        # Tests share process-wide pipeline counters and a commit-budget override.
+        run: cargo +1.100.0 test -p xcl --release --locked --lib -- --test-threads=1
