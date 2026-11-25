@@ -1,5 +1,33 @@
 # Building and changing the runtime
 
+## v0.3.0 Experimental with VIctory
+
+Download the corresponding GPL-3.0-or-later source archive attached to
+[`runtime-v0.3.0`](https://github.com/mkr2tl/xenstride-public/releases/tag/runtime-v0.3.0).
+Extract it separately from the historical XCL workspace in this repository.
+Use Windows x64, MSVC, the Windows SDK and Rust 1.98.1, as pinned in the
+archive's `rust-toolchain.toml`.
+
+```powershell
+$env:CARGO_PROFILE_RELEASE_DEBUG = '0'
+cargo build --release --locked -p victory
+```
+
+The executable is `target/release/victory.exe`. The source archive includes
+`RELEASE-BUILD.md` and the reproduction instructions in
+`docs/reference-scene.md`. Follow those instructions with authorized
+fixtures. The ordinary build excludes embedded BCPack tables. The runtime
+can load separately obtained, authorized tables through
+`VICTORY_BCPACK_TABLES`.
+
+For an offline build, extract the locked dependency-source archive alongside
+the runtime source so that `vendor/` sits next to `Cargo.toml`. Append the
+supplied `vendor-config.toml` to `.cargo/config.toml`, then add `--offline`
+to the build command. The archive preserves the registry packages and their
+license notices. Windows and the MSVC toolchain are installed separately.
+
+## Historical building instructions for XCL v0.1.0–v0.2.0
+
 `runtime/` is a complete Cargo workspace (GPL-2.0-only): XCL at upstream `9aec53d` plus the
 Xenstride changes in [runtime/XENSTRIDE_CHANGES.md](../runtime/XENSTRIDE_CHANGES.md).
 Upstream's own guide, [runtime/README.md](../runtime/README.md), describes the runtime's features,

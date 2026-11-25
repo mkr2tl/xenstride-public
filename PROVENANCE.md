@@ -1,5 +1,26 @@
 # Provenance
 
+## v0.3.0 Experimental
+
+The main Xenstride runtime for this release starts from
+[VIctory](https://github.com/Marvisak/VIctory) at
+`13f91caee25f2fdf2c062be5f7a27f058e51cbca`, under GPL-3.0-or-later.
+The Windows binary was built from the table-free export of
+`195cfec432648e1df2d154ace24f313023bcf16a`. The corresponding source
+snapshot is `5ee7aba9dfa48e2e34fdc2443de5bd516d14c551`. Only release,
+benchmark and announcement documentation changed between those commits.
+The source archive retains the VIctory copyright and license notices.
+Depth-bounds support incorporates [VIctory PR #158](https://github.com/Marvisak/VIctory/pull/158)
+by r4tedx, with the exact revision recorded in the source archive's
+`XENSTRIDE.md`. The separate MIT capture archive uses
+`3062a63f36511c97291c2b780bd264082b9e4ece`.
+
+The v0.3.0 runtime is a separate lineage from the GPL-2.0-only XCL sources
+below. Its published build and source exclude the upstream BCPack table
+file, locally generated caches, private captures and game assets.
+
+## Historical XCL releases
+
 The v0.1.0 export was prepared on 2026-11-24. The v0.2.0 selection was prepared on
 2026-11-25 from immutable commits in the P29 lineage. No private Git history is bundled.
 

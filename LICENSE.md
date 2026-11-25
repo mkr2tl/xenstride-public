@@ -2,13 +2,17 @@
 
 There is no blanket MIT licence for this repository.
 
+- The v0.3.0 VIctory-based runtime and its corresponding source archive
+  are GPL-3.0-or-later. The archive carries its own GPLv3 text and attribution.
+- The independently distributed capture tools are MIT, with their own notice.
+
 - `runtime/`: GPL-2.0-only, an XCL derivative; see runtime/LICENSE, runtime/THIRD_PARTY.md
   and runtime/XENSTRIDE_CHANGES.md (dated modification notices, GPL-2.0 section 2a).
 - `xcl-gpl/`: GPL-2.0-only, derived from ivall/xcl; see its LICENSE and README.
 - `tools-mit/`: MIT, with its existing attribution and provenance notices.
 - Newly written project overview documentation: MIT, using the notice in tools-mit/LICENSE.
 
-## Runtime binaries
+## Historical XCL runtime binaries
 
 A release of `xcl.exe` is distributed only together with:
 
