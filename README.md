@@ -8,7 +8,7 @@ descriptor views, shader rounding fixes, and reproducible GPU diagnostics.
 
 - [v0.3.0 Experimental](https://github.com/mkr2tl/xenstride-public/releases/tag/runtime-v0.3.0) provides the Windows x64 build, corresponding source, checksums and benchmark evidence.
 - [Build and reproduce](docs/RUNTIME.md), [status and limits](docs/STATUS.md), [changelog](CHANGELOG.md), and [provenance](PROVENANCE.md).
-- [Earlier XCL releases](https://github.com/mkr2tl/xenstride-public/releases) remain available. The XCL source in [runtime/](runtime/) and [xcl-gpl/](xcl-gpl/) is a separate GPL-2.0-only lineage. The VIctory-based runtime uses GPL-3.0-or-later. [Component licences](LICENSE.md).
+- The VIctory-based runtime uses GPL-3.0-or-later. [Component licences](LICENSE.md).
 - [Standalone MIT tools](tools-mit/) cover format inspection and synthetic PE fixtures. The independent capture launcher ships as a separate MIT source archive.
 
 Validation uses original authorized fixtures. Commercial game compatibility,

@@ -2,8 +2,7 @@
 
 ## Runtime v0.3.0 Experimental
 
-First experimental release of the VIctory-based Xenstride runtime. The
-older XCL releases retain their own source, notices and build instructions.
+First experimental release of the VIctory-based Xenstride runtime.
 
 - Pack partial texture uploads and reclaim cold staging buffers. Use
   smaller initial staging blocks on light streaming workloads.

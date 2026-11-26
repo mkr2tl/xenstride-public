@@ -7,8 +7,9 @@ The main Xenstride runtime for this release starts from
 `13f91caee25f2fdf2c062be5f7a27f058e51cbca`, under GPL-3.0-or-later.
 The Windows binary was built from the table-free export of
 `195cfec432648e1df2d154ace24f313023bcf16a`. The corresponding source
-snapshot is `5ee7aba9dfa48e2e34fdc2443de5bd516d14c551`. Only release,
-benchmark and announcement documentation changed between those commits.
+snapshot is `89b941145590959bd97609737956ac1aafec85c5`. Only documentation
+changed between those commits. `docs/VICTORY-UPSTREAM.md` preserves the
+upstream README separately from Xenstride's own validation.
 The source archive retains the VIctory copyright and license notices.
 Depth-bounds support incorporates [VIctory PR #158](https://github.com/Marvisak/VIctory/pull/158)
 by r4tedx, with the exact revision recorded in the source archive's
