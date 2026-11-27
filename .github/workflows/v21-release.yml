@@ -1,0 +1,37 @@
+name: V21 release validation
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-source:
+    runs-on: windows-latest
+    timeout-minutes: 60
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Download the public V21 assets
+        shell: pwsh
+        run: |
+          gh release download runtime-v0.4.0 --repo mkr2tl/xenstride-public --dir assets
+          foreach ($line in Get-Content assets/SHA256SUMS.txt) {
+            $parts = $line -split '\s+', 2
+            if ((Get-FileHash (Join-Path assets $parts[1]) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $parts[0]) { throw "Asset hash mismatch" }
+          }
+          Expand-Archive assets/Xenstride-runtime-0.4.0-source.zip source
+          Expand-Archive assets/Xenstride-runtime-0.4.0-dependency-source.zip .
+          Expand-Archive assets/Xenstride-runtime-0.4.0-windows-x64.zip windows
+          if (Test-Path source/crates/victory-formats/src/bcpack-tables.bin) { throw "Private table in source" }
+          ./windows/victory-v20.exe --help
+          if ($LASTEXITCODE -ne 0) { throw "Public executable failed" }
+      - name: Install the pinned toolchain
+        working-directory: source
+        run: rustup toolchain install 1.98.1 --profile minimal --target x86_64-pc-windows-msvc
+      - name: Build locked source with vendored dependencies
+        working-directory: source
+        run: cargo --config 'source.crates-io.replace-with="vendored-sources"' --config 'source.vendored-sources.directory="../dependency-source"' build --offline --locked --release -p victory
+      - name: Run data-free tests serially
+        working-directory: source
+        run: cargo --config 'source.crates-io.replace-with="vendored-sources"' --config 'source.vendored-sources.directory="../dependency-source"' test --offline --locked --workspace -- --test-threads=1

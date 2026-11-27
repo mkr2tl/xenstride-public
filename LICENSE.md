@@ -29,3 +29,7 @@ any other Microsoft component; users obtain them from their own system or Micros
 
 Do not relabel an XCL derivative MIT. This is a redistribution inventory, not a legal opinion
 or an assurance that every possible use of third-party game material is permitted.
+
+## v0.4.0
+
+The V21-based public runtime and corresponding source are GPL-3.0-or-later, with original dependency notices and locked dependency sources attached to runtime-v0.4.0. The public binary excludes the upstream BCPack table. This records the new release scope without changing any component licence.

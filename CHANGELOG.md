@@ -1,5 +1,7 @@
 # Changelog
 
+Current release: [runtime-v0.4.0](https://github.com/mkr2tl/xenstride-public/releases/tag/runtime-v0.4.0). See the [V21 release notes](docs/releases/runtime-v0.4.0.md) for public-rebuild validation and separately attributed historical observations.
+
 ## Runtime v0.3.0 Experimental
 
 First experimental release of the VIctory-based Xenstride runtime.

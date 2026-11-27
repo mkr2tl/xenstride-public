@@ -62,3 +62,11 @@ port of XCL PR #684, and XCL PR #1007 addresses the same priority inversion.
 The exact upstream module revision, local-base reconstruction and dated distribution
 notices of the earlier module package are specified in xcl-gpl/PROVENANCE.json and
 xcl-gpl/README.md.
+
+## v0.4.0 ? V21 public rebuild
+
+Based exclusively on xenstride-v21 reference 9627946f20c79c786fcfce0a45211bcf5aa352f2, following fxceless base 9a9091d. The public export removes the BCPack table and its policy exemption, loads private tables through VICTORY_BCPACK_TABLES, and applies bounded source-size allowances without bypassing content checks. No V22 work is included.
+
+The Windows executable was built offline from the extracted corresponding source using Rust 1.98.1. Final documentation and licence-notice organisation were updated afterwards; Rust/build inputs were unchanged. See docs/releases/runtime-v0.4.0-build.json for exact source-manifest and binary hashes. The original internal V21 capture uses a different binary and is not a benchmark of the public rebuild. Complete corresponding source and dependency sources are release assets; they are not the historical runtime/ workspace.
+
+The source licence is unchanged. Upstream explicitly excludes its BCPack table from that licence; the public export does not include it. Microsoft silicon-rans provides MIT entropy-model code, but no complete redistribution grant for all upstream table sections was established. Earlier public source/binary assets inspected for v0.1.0?v0.3.0 contained no complete exact V21 table; v0.3.0 explicitly uses external tables by default.

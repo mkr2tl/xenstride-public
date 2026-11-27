@@ -1,5 +1,15 @@
 # Building and changing the runtime
 
+## v0.4.0 ? V21
+
+Download the corresponding source and locked dependency-source archives from [runtime-v0.4.0](https://github.com/mkr2tl/xenstride-public/releases/tag/runtime-v0.4.0). Extract the source into its own directory and the dependency archive alongside it, so `../dependency-source` exists. Use the pinned Rust 1.98.1 MSVC toolchain and Windows SDK/C++ build tools.
+
+```powershell
+cargo build --locked --release -p victory
+```
+
+For offline crate resolution, follow `RELEASE-BUILD.md` in the source archive. Private tables are runtime inputs supplied through `VICTORY_BCPACK_TABLES`, not build inputs. The public build is validated by local synthetic tests and an offline source build; clean-machine and interactive public-rebuild validation remain open. See the release notes for external Windows dependencies.
+
 ## v0.3.0 Experimental with VIctory
 
 Download the corresponding GPL-3.0-or-later source archive attached to

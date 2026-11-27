@@ -1,0 +1,3 @@
+7ea4ddc39bf3e4da132adce810be11882d462ad43a427fd4b72af1db81b3fb7b  Xenstride-runtime-0.4.0-dependency-source.zip
+708389c4016dc03c3e9ef53e82db935c1a883ad6c95e2d8b8caf0a782ce53143  Xenstride-runtime-0.4.0-source.zip
+bdfc56cb6caf40f3a7ba69024616dd26be134c665769601d1c12f546b974a17c  Xenstride-runtime-0.4.0-windows-x64.zip

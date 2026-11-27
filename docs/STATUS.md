@@ -1,5 +1,7 @@
 # Runtime v0.3.0 Experimental
 
+Current release: [runtime-v0.4.0](https://github.com/mkr2tl/xenstride-public/releases/tag/runtime-v0.4.0). See the [V21 release notes](releases/runtime-v0.4.0.md) for public-rebuild validation and separately attributed historical observations.
+
 | Area | Verified result |
 | --- | --- |
 | Streaming | In the original 960 × 540 crowd scene on RX 9060 XT, peak staging fell from 32 MiB to 8 MiB with FP16 enabled. Median frame time was 5.786 ms with fixed blocks and 5.815 ms with smaller initial blocks. P95 was 7.014 ms and 6.901 ms respectively. |
